@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نظام إدارة وتسجيل التدريب 2027</title>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/*FONT*/
+/*CSS*/
+</style>
+</head>
+<body>
+<div id="lock"><div class="card"><div id="lkLogo" style="display:flex;justify-content:center;margin-bottom:10px"></div><h2 style="margin:0 0 4px;font-size:18px">نظام إدارة وتسجيل التدريب</h2><p class="sub" style="margin:0 0 14px">أدخل كلمة السر للمتابعة</p><form onsubmit="event.preventDefault();tryUnlock()"><input type="password" id="lkPw" autocomplete="current-password" style="text-align:center"><div id="lkErr" class="flag" style="min-height:22px;margin:6px 0"></div><button class="btn" style="width:100%">دخول</button></form></div></div>
+<header class="hdr"><div class="in">
+  <a class="logo" id="logoBox" onclick="go('dash')"></a>
+  <nav class="nav" id="nav"></nav>
+  <div class="hdr-end">
+    <button class="linkpill" id="linkPill" onclick="pullPlan(true)"></button>
+    <button class="circ" onclick="toggleTheme()" title="تبديل المظهر" aria-label="تبديل المظهر"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z"/></svg></button>
+  </div>
+</div></header>
+<main id="main"></main>
+<footer class="ftr"><div class="in"><span id="ftOrg"></span><span>البيانات محفوظة على هذا الجهاز والمتصفح ومربوطة بنظام الاحتياجات التدريبية. خذ نسخة احتياطية أسبوعيًا.</span></div></footer>
+<div class="modal-back" id="modal"></div>
+<div class="toast" id="toast"></div>
+<div id="tip"></div>
+<input type="file" id="fileA" accept=".xlsx,.xls,.csv" hidden onchange="importAttFile(this.files[0]);this.value=''">
+<input type="file" id="fileE" accept=".xlsx,.xls,.csv" hidden onchange="importEmp(this.files[0]);this.value=''">
+<input type="file" id="fileJ" accept=".json" hidden onchange="importJSON(this.files[0]);this.value=''">
+<input type="file" id="fileP" accept=".json" hidden onchange="importPlan(this.files[0]);this.value=''">
+<script>
+/*SNAPSHOT*/
+</script>
+<script>
+/*JS*/
+</script>
+</body>
+</html>
