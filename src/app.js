@@ -305,15 +305,18 @@ function ua(i,k,v){ATT[i][k]=v;if(k==='code'){const before=ATT[i].name+'|'+(ATT[
 function addAtt(){ATT.push({code:'',name:'',phone:'',dept:'',branch:'',job:'',st:'حاضر',pre:'',post:'',sat:''});drawAtt();const ins=document.querySelectorAll('#attBox tbody tr:last-child input');if(ins[0])ins[0].focus()}
 function parseRows(text){return String(text).replace(/\r/g,'').split('\n').map(l=>l.trim()?l.split('\t').map(x=>x.trim()):null).filter(Boolean)}
 const HDR={phone:/موبايل|محمول|هاتف|تليفون|جوال|واتس|phone|mobile|whats/i,code:/كود|الرقم الوظيفي|رقم|code|id/i,name:/اسم|name/i,dept:/ادار|إدار|قسم|dept|department/i,branch:/فرع|موقع|branch|location/i,job:/وظيف|مسمى|job|title|position/i,st:/حضور|حالة|status|attend/i,pre:/قبل|pre/i,post:/بعد|post/i,sat:/رضا|تقييم|sat|rating/i};
-function rowsToPeople(rows){if(!rows.length)return[];let map=null;const h=rows[0].map(x=>String(x||''));
-  const hm={};Object.keys(HDR).forEach(k=>{const i=h.findIndex((c,j)=>HDR[k].test(c)&&!(k==='name'&&/برنامج|دورة|مدرب|مدير/.test(c))&&!(k==='code'&&/برنامج|دورة/.test(c))&&!Object.values(hm).includes(j));if(i>=0)hm[k]=i});
-  if(Object.keys(hm).filter(k=>k!=='phone').length>=2&&(hm.name!=null||hm.code!=null)){map=hm;rows=rows.slice(1)}
+function matchHdr(h){const hm={};Object.keys(HDR).forEach(k=>{const i=h.findIndex((c,j)=>HDR[k].test(c)&&!(k==='name'&&/برنامج|دورة|مدرب|مدير/.test(c))&&!(k==='code'&&/برنامج|دورة/.test(c))&&!Object.values(hm).includes(j));if(i>=0)hm[k]=i});return hm}
+/* يتعرف على صف العناوين أينما كان (أول 25 صفًا) — يدعم النماذج الرسمية TR-P-F03 / F09 */
+function rowsToPeople(rows){if(!rows.length)return[];let map=null;
+  for(let r=0;r<Math.min(rows.length,25);r++){const hm=matchHdr(rows[r].map(x=>String(x||'').trim()));if(Object.keys(hm).filter(k=>k!=='phone').length>=2&&(hm.name!=null||hm.code!=null)){map=hm;rows=rows.slice(r+1);break}}
   return rows.map(r=>{let a;if(map){a={};Object.keys(map).forEach(k=>a[k]=String(r[map[k]]??'').trim())}
     else if(r.length===1){const m=String(r[0]).match(/^(\d+)\s+(.+)$/);a=m?{code:m[1],name:m[2]}:{name:r[0]}}
     else{const first=/^\d+$/.test(String(r[0]).trim());a=first?{code:r[0],name:r[1],dept:r[2],branch:r[3],job:r[4]}:{name:r[0],dept:r[1],branch:r[2],job:r[3]}}
     const st=String(a.st||'');a.st=/غائب|absent/i.test(st)?'غائب':/متأخر|late/i.test(st)?'متأخر':/اعتذ|excus/i.test(st)?'اعتذر':'حاضر';
     if(a.phone)a.phone=String(a.phone).replace(/[^\d+]/g,'');if(a.phone&&/^1\d{9}$/.test(a.phone))a.phone='0'+a.phone;
-    return Object.assign({code:'',name:'',phone:'',dept:'',branch:'',job:'',pre:'',post:'',sat:''},a)}).filter(a=>a.name||a.code)}
+    a.code=String(a.code||'').trim();a.name=String(a.name||'').trim();
+    return Object.assign({code:'',name:'',phone:'',dept:'',branch:'',job:'',pre:'',post:'',sat:''},a)})
+    .filter(a=>(a.name||a.code)&&!(a.code&&!/^[A-Za-z0-9\-]+$/.test(a.code))&&!(map&&!a.name&&!/^\d+$/.test(a.code))&&!/^\d+$/.test(a.name))}
 function pasteAtt(){openModal2(`<div class="mh"><h3>لصق كشف الحضور من Excel</h3><button class="x" onclick="closeModal2()">×</button></div><div class="mb"><p class="sub">انسخ الصفوف من Excel والصقها هنا. إذا كان الصف الأول عناوين (الكود، الاسم، الإدارة، الفرع، الوظيفة، الحضور، قبلي، بعدي، الرضا) سيتم التعرف عليها تلقائيًا.</p><textarea id="pasteBox" style="min-height:220px" placeholder="1025	أحمد محمد	العمليات (الفروع)	فرع سموحة	مدير فرع"></textarea></div><div class="mf"><button class="btn-out" onclick="closeModal2()">إلغاء</button><button class="btn" onclick="doPaste()">إضافة</button></div>`)}
 function doPaste(){const L=rowsToPeople(parseRows($('pasteBox').value));const idx=empIdx();L.forEach(a=>ATT.push(fillEmp(a,idx)));closeModal2();drawAtt();toast(`تمت إضافة ${L.length} متدرب`)}
 function readXL(file,cb){if(!file)return;const isCSV=/\.csv$/i.test(file.name);const rd=new FileReader();
