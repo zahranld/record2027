@@ -39,13 +39,13 @@ bdi{unicode-bidi:isolate}
 a{color:var(--tech)}
 /* header */
 .hdr{position:sticky;top:0;z-index:30;background:var(--bar);color:var(--bar-ink);border-bottom:1px solid var(--line)}
-.hdr .in{display:flex;align-items:center;gap:18px;min-height:64px;flex-wrap:wrap}
+.hdr .in{display:flex;align-items:center;gap:12px;min-height:64px;flex-wrap:wrap}
 .logo{display:flex;align-items:center;gap:10px;cursor:pointer;text-decoration:none;color:inherit}
 .logo img{height:40px;width:auto;display:block}
 .logo-txt{font-weight:800;font-size:22px;letter-spacing:.5px}.logo-txt span{color:var(--red)}
 .logo small{display:block;font-size:11px;color:var(--muted);line-height:1.3;font-weight:600}
 .nav{display:flex;gap:2px;flex-wrap:wrap;flex:1}
-.nav button{background:none;border:0;padding:8px 11px;white-space:nowrap;border-radius:8px;cursor:pointer;font-weight:600;font-size:13.5px;color:var(--ink-2)}
+.nav button{background:none;border:0;padding:7px 8px;white-space:nowrap;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;color:var(--ink-2)}
 .nav button:hover{background:var(--card-2)}
 .nav button.on{background:var(--red);color:#fff}
 .nav .cnt{font-size:11px;background:rgba(127,127,127,.25);border-radius:10px;padding:0 7px;margin-inline-start:6px}
@@ -270,7 +270,7 @@ async function pullPlan(manual){
   PLAN_ST='جارٍ التحديث...';renderChrome();
   try{const r=await fetch(PLAN_LINK.url+'/rest/v1/app_state?id=eq.1&select=data,version',{headers:{apikey:PLAN_LINK.key,Authorization:'Bearer '+PLAN_LINK.key}});
     const rows=await r.json();if(!r.ok||!rows.length||!setPlan(rows[0].data,'live',new Date().toLocaleString('en-GB')))throw 0;
-    cachePlan('live');PLAN_ST='';if(manual)toast(`تم تحديث الخطة: ${P.programs.length} برنامج و ${P.needs.length} احتياج`);
+    cachePlan('live');PLAN_ST='';trackPlan();if(manual)toast(`تم تحديث الخطة: ${P.programs.length} برنامج و ${P.needs.length} احتياج`);
     if(!$('modal').classList.contains('show'))render();else renderChrome();
   }catch(e){PLAN_ST='تعذر الاتصال';renderChrome();if(manual)toast('تعذر الاتصال بنظام الاحتياجات. يعمل النظام على آخر نسخة محفوظة.',true)}
 }
@@ -287,11 +287,29 @@ const pEst=p=>{const r=rateOf(p.method);return Math.round(pGroups(p)*pDays(p)*r.
 const pBudget=p=>p.method===INTERNAL?0:(+p.budget>0?+p.budget:pEst(p));
 const pLog=p=>+p.logistics>0?+p.logistics:(p.method===INTERNAL?(+p.budget||pEst(p)):0);
 
+/* ===================== تعديلات الخطة: نسخة الأساس + سجل التغييرات ===================== */
+/* الخطة تقديرية: أي تعديل في نظام الاحتياجات (برامج/أعداد/ميزانية/فترة) يُرصد تلقائيًا ويُقارن بنسخة الأساس */
+const perTxt=(a,b)=>a===b?MONTHS[a]:`${MONTHS[a]} - ${MONTHS[b]}`;
+function planSummary(){const o={};P.programs.forEach(p=>{if(p.status==='ملغي')return;const ss=(p.sessions||[]).filter(x=>x&&x.from);
+  o[p.id]={code:p.code||'',name:p.name||'',cat:p.category||'',method:p.method||'',tr:pTrainees(p),ss:ss.length||1,h:+p.hours||0,cost:pBudget(p)+pLog(p),per:perTxt(+p.startMonth||0,+p.endMonth||0)}});return o}
+const planMeta=()=>({needs:P.needs.length,linked:P.needs.filter(n=>n.programId).length});
+function planTotals(sm){const v=Object.values(sm||{});return{n:v.length,ss:v.reduce((a,x)=>a+x.ss,0),tr:v.reduce((a,x)=>a+x.tr,0),hrs:v.reduce((a,x)=>a+x.h*x.ss,0),cost:v.reduce((a,x)=>a+x.cost,0)}}
+const DF=[['name','اسم البرنامج'],['cat','الفئة',v=>CATS[v]||v],['method','أسلوب التدريب'],['tr','عدد المتدربين',v=>fmt(v)],['ss','عدد الجلسات',v=>fmt(v)],['h','ساعات الجلسة',v=>fmt(v,1)],['cost','الميزانية (ج.م)',v=>fmt(v)],['per','الفترة']];
+function planDiff(a,b){const out=[];a=a||{};b=b||{};
+  Object.keys(b).forEach(id=>{const x=b[id];if(!a[id])out.push({t:'add',id,code:x.code,name:x.name,cost:x.cost,tr:x.tr});else{const y=a[id];const f=DF.filter(([k])=>String(y[k]??'')!==String(x[k]??'')).map(([k,l,fm])=>({k,l,from:fm?fm(y[k]):y[k],to:fm?fm(x[k]):x[k],d:typeof x[k]==='number'?x[k]-(+y[k]||0):null}));if(f.length)out.push({t:'mod',id,code:x.code,name:x.name,f})}});
+  Object.keys(a).forEach(id=>{if(!b[id])out.push({t:'del',id,code:a[id].code,name:a[id].name,cost:a[id].cost,tr:a[id].tr})});return out}
+const diffCount=d=>({add:d.filter(x=>x.t==='add').length,del:d.filter(x=>x.t==='del').length,mod:d.filter(x=>x.t==='mod').length});
+const curBase=()=>R.baselines.find(b=>b.id===R.activeBase)||R.baselines[R.baselines.length-1]||null;
+function trackPlan(){if(!P.programs.length)return;const cur=planSummary();let ch=false;
+  if(!R.baselines.length){R.baselines.push({id:uid(),name:'النسخة التقديرية الأولى',at:today(),src:PLAN_AT||PLAN_SRC,progs:cur,meta:planMeta()});ch=true}
+  if(R.lastSeen){const d=planDiff(R.lastSeen,cur);if(d.length){R.planLog.unshift({at:new Date().toISOString(),src:PLAN_SRC,changes:d,before:planTotals(R.lastSeen),after:planTotals(cur)});R.planLog=R.planLog.slice(0,300);ch=true}}
+  if(!R.lastSeen||ch){R.lastSeen=cur;ch=true}if(ch)save()}
+
 /* ===================== بيانات التنفيذ (هذا النظام) ===================== */
 function defaultsR(){return{settings:{passMark:70,l3Days:90,hoursTarget:12,venues:['قاعة التدريب - الإدارة العامة','قاعة فرع الإسكندرية','أونلاين (Teams / Zoom)','داخل الفرع (OJT)'],seqU:0},
-  trainers:[],employees:[],recs:{},adhoc:[],evals:{}}}
+  trainers:[],employees:[],recs:{},adhoc:[],evals:{},baselines:[],planLog:[],lastSeen:null,activeBase:''}}
 let R=loadR();
-function loadR(){const d=defaultsR();try{const x=JSON.parse(localStorage.getItem(RKEY)||'null');if(x){Object.assign(d.settings,x.settings||{});['trainers','employees','adhoc'].forEach(k=>{if(Array.isArray(x[k]))d[k]=x[k]});['recs','evals'].forEach(k=>{if(x[k]&&typeof x[k]==='object')d[k]=x[k]})}}catch(e){}return d}
+function loadR(){const d=defaultsR();try{const x=JSON.parse(localStorage.getItem(RKEY)||'null');if(x){Object.assign(d.settings,x.settings||{});['trainers','employees','adhoc','baselines','planLog'].forEach(k=>{if(Array.isArray(x[k]))d[k]=x[k]});if(x.activeBase)d.activeBase=x.activeBase;['recs','evals','lastSeen'].forEach(k=>{if(x[k]&&typeof x[k]==='object')d[k]=x[k]})}}catch(e){}return d}
 function save(){try{localStorage.setItem(RKEY,JSON.stringify(R))}catch(e){toast('تعذر الحفظ على هذا المتصفح — صدّر نسخة احتياطية الآن',true)}}
 
 /* ===================== النموذج الموحد (خطة + تنفيذ) ===================== */
@@ -310,7 +328,7 @@ function buildModel(){
     ss.forEach((s,i)=>{const g=+s.g||i+1;const key=o.id+'|'+g;if(seen.has(key))return;seen.add(key);slots.push(mkSlot(o,key,g,s.from,s.to||s.from,seats))})});
   Object.values(R.recs).forEach(r=>{if(seen.has(r.key))return;seen.add(r.key);let o=byId[r.progId];
     if(!o){const sn=r.snap||{};o={id:r.progId||'orph',code:sn.code||'؟',name:(sn.name||'برنامج محذوف من الخطة')+' (غير موجود بالخطة الحالية)',cat:sn.cat||'',method:sn.method||'',provider:'',hours:+sn.hours||0,trainees:0,groups:0,planCost:0,needs:[],depts:[],adhoc:true,orphan:true,raw:{},slots:[],kpi:'',evalLevel:'',objective:''};progs.push(o);byId[o.id]=o}
-    slots.push(mkSlot(o,r.key,r.g||1,r.pFrom||r.from,r.pTo||r.to||r.from,o.adhoc?(+r.seats||0):0))});
+    const sl=mkSlot(o,r.key,r.g||1,r.pFrom||r.from,r.pTo||r.to||r.from,o.adhoc?(+r.seats||0):0);sl.unlinked=!!o.orphan||!o.adhoc;slots.push(sl)});
   slots.forEach(s=>s.prog.slots.push(s));
   slots.sort((a,b)=>String(a.from).localeCompare(String(b.from))||String(a.prog.code).localeCompare(String(b.prog.code))||a.g-b.g);
   M={progs,byId,slots};return M}
@@ -352,19 +370,19 @@ const progStCls={'مكتمل':'done','جارٍ التنفيذ':'post','لم يب
 /* ===================== الواجهة العامة ===================== */
 let VIEW='dash';
 const VIEWS=[{k:'dash',t:'لوحة القيادة'},{k:'exec',t:'التنفيذ والحضور',cnt:()=>M.slots.filter(s=>s.overdue).length,warn:true},{k:'progs',t:'البرامج'},{k:'people',t:'الموظفون'},
-  {k:'eval',t:'التقييم'},{k:'budget',t:'الميزانية'},{k:'needs',t:'الاحتياجات'},{k:'trainers',t:'المدربون'},{k:'reports',t:'التقارير'},{k:'set',t:'الإعدادات'}];
+  {k:'eval',t:'التقييم'},{k:'budget',t:'الميزانية'},{k:'needs',t:'الاحتياجات'},{k:'changes',t:'تعديلات الخطة',cnt:()=>M.slots.filter(s=>s.unlinked).length},{k:'trainers',t:'المدربون'},{k:'reports',t:'التقارير'},{k:'set',t:'الإعدادات'}];
 function logoHTML(){return PS().logo?`<img src="${PS().logo}" alt="${esc(ORG())}">`:`<span class="logo-txt">زهـ<span>ـران</span></span>`}
 function renderChrome(){
-  $('nav').innerHTML=VIEWS.map(v=>{const c=v.cnt?v.cnt():0;return `<button class="${VIEW===v.k?'on':''}" onclick="go('${v.k}')">${v.t}${c?`<span class="cnt" title="جلسات متأخرة">${c}</span>`:''}</button>`}).join('');
+  $('nav').innerHTML=VIEWS.map(v=>{const c=v.cnt?v.cnt():0;return `<button class="${VIEW===v.k?'on':''}" onclick="go('${v.k}')">${v.t}${c?`<span class="cnt" title="${v.k==='exec'?'جلسات متأخرة':'تسجيلات تحتاج إعادة ربط'}">${c}</span>`:''}</button>`}).join('');
   $('logoBox').innerHTML=logoHTML()+`<span><small>نظام إدارة وتسجيل التدريب ${YEAR()}</small></span>`;
   const lp=$('linkPill');const live=PLAN_SRC==='live';
   lp.className='linkpill '+(live?'live':'snap');
-  const srcT=live?'مرتبط بالخطة (مباشر)':PLAN_SRC==='import'?'خطة مستوردة يدويًا':PLAN_SRC==='cache'?'آخر نسخة محفوظة من الخطة':'نسخة مدمجة من الخطة';lp.innerHTML=`<i></i>${PLAN_ST==='تعذر الاتصال'?srcT+' — غير متصل':PLAN_ST||srcT}`;
+  const srcT=live?'مرتبط بالخطة (مباشر)':PLAN_SRC==='import'?'خطة مستوردة يدويًا':PLAN_SRC==='cache'?'آخر نسخة محفوظة من الخطة':'نسخة مدمجة من الخطة';lp.innerHTML=`<i></i>${PLAN_ST==='تعذر الاتصال'?(live?'آخر نسخة من الخطة':srcT)+' — غير متصل':PLAN_ST||srcT}`;if(PLAN_ST==='تعذر الاتصال')lp.className='linkpill snap';
   lp.title='اضغط لتحديث البيانات من نظام الاحتياجات'+(PLAN_AT?` — آخر تحديث: ${PLAN_AT}`:'');
   $('ftOrg').innerHTML=`<b>${esc(ORG())}</b> | ${esc(UNIT())}`;
   document.title=`نظام إدارة وتسجيل التدريب ${YEAR()} | ${ORG()}`}
 function go(v){VIEW=v;closeModal();render();window.scrollTo(0,0)}
-function render(){buildModel();renderChrome();const f={dash:vDash,exec:vExec,progs:vProgs,people:vPeople,eval:vEval,budget:vBudget,needs:vNeeds,trainers:vTrainers,reports:vReports,set:vSet}[VIEW]||vDash;
+function render(){buildModel();renderChrome();const f={changes:vChanges,dash:vDash,exec:vExec,progs:vProgs,people:vPeople,eval:vEval,budget:vBudget,needs:vNeeds,trainers:vTrainers,reports:vReports,set:vSet}[VIEW]||vDash;
   $('main').innerHTML=f();if(VIEW==='exec')drawExec();if(VIEW==='people')drawPeople();if(VIEW==='progs')drawProgs();if(VIEW==='reports')drawReport()}
 const printHead=()=>`<div class="print-head">${esc(ORG())} | ${esc(UNIT())} | تاريخ الطباعة: ${today()}</div>`;
 const pageTop=(title,sub,acts='')=>printHead()+`<section class="pband"><div class="in"><div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</div><div class="acts">${acts}</div></div></section><div class="in wrap">`;
@@ -385,6 +403,8 @@ function vDash(){
   let h=pageTop(`لوحة القيادة التنفيذية — تدريب ${YEAR()}`,`متابعة تنفيذ الخطة التدريبية المعتمدة في نظام الاحتياجات (${live.length} برنامج | ${S.filter(s=>!s.prog.adhoc).length} جلسة مخططة) مقابل التنفيذ الفعلي.`,
     `<button class="btn-out" onclick="go('reports')">التقرير الأسبوعي</button><button class="btn-out" onclick="exportExcel()">تصدير Excel</button><button class="btn" onclick="go('exec')">تسجيل تنفيذ جلسة</button>`);
   if(!P.programs.length)h+=`<div class="alert err">لا توجد بيانات خطة بعد. افتح الإعدادات > الربط بالخطة واضغط "تحديث من نظام الاحتياجات" أو استورد نسخة JSON من نظام الاحتياجات.</div>`;
+  const B=curBase();if(B){const d=planDiff(B.progs,planSummary());if(d.length){const c=diffCount(d),tb=planTotals(B.progs),tc=planTotals(planSummary());h+=`<div class="alert info"><b>الخطة الحالية معدّلة عن نسخة الأساس "${esc(B.name)}":</b> ${c.add} برنامج مضاف، ${c.del} محذوف، ${c.mod} معدّل | المتدربون ${fmt(tb.tr)} ← ${fmt(tc.tr)} | الميزانية ${fmt(tb.cost)} ← ${fmt(tc.cost)} ج.م. كل المؤشرات تُحسب على الخطة الحالية. <button class="btn-ghost" onclick="go('changes')">عرض التعديلات</button></div>`}}
+  const UL=S.filter(s=>s.unlinked).length;if(UL)h+=`<div class="alert err"><b>${UL} تسجيل تنفيذ</b> لم يعد مرتبطًا بجلسة في الخطة الحالية (حُذف البرنامج أو قلّ عدد مجموعاته). <button class="btn-ghost" onclick="go('changes')">إعادة الربط</button></div>`;
   if(A.overdue)h+=`<div class="alert err"><b>${A.overdue} جلسة متأخرة</b> عن موعدها المخطط ولم يُسجَّل تنفيذها. <button class="btn-ghost" onclick="EF=Object.assign(blankEF(),{st:'متأخر'});go('exec')">عرض الجلسات المتأخرة</button></div>`;
   h+=`<div class="kpis">
     ${kpi('الجلسات المنفذة',`${fmt(A.done)}<small>من ${fmt(A.total-A.cancel)}</small>`,`حتى اليوم: ${fmt(Y.done)} من ${fmt(ytd.length-Y.cancel)} مستحقة (${pct(Y.done,ytd.length-Y.cancel)}%)`,pct(A.done,A.total-A.cancel),true)}
@@ -456,6 +476,7 @@ function openSession(key){buildModel();const s=M.slots.find(x=>x.key===key);if(!
   const trainers=R.trainers.map(t=>t.name);
   openModal(`<div class="mh"><div><h3>${cdc(o.code)} ${esc(o.name)} — مجموعة ${s.g}</h3><div class="sub">${chip(o.cat)} ${esc(o.method)} ${o.provider?'| '+esc(o.provider):''}</div></div><button class="x" onclick="closeModal()">×</button></div>
   <form class="mb" id="sessForm" onsubmit="event.preventDefault();saveSession()">
+   ${s.unlinked?`<div class="alert err" style="margin-top:0"><b>هذا التسجيل غير مرتبط بجلسة في الخطة الحالية</b> (حُذف البرنامج أو تغيّر عدد مجموعاته في نظام الاحتياجات). البيانات محفوظة كما هي — اختر الجلسة المقابلة في الخطة الحالية لإعادة ربطها:<select name="relink" style="margin-top:8px">${opt(M.slots.filter(x=>!x.rec&&!x.prog.adhoc).map(x=>[x.key,`${x.prog.code} ${x.prog.name} — مجموعة ${x.g} (${fmtD(x.pFrom)})`]),'','— إبقاء التسجيل كما هو —')}</select></div>`:''}
    <div class="info-row"><span><b>الموعد المخطط:</b>${rng(s.pFrom,s.pTo)}</span><span><b>ساعات الجلسة:</b>${o.hours}</span><span><b>المقاعد المخططة:</b>${s.seats||'—'}</span><span><b>المستهدف بالتقييم:</b>${esc(o.evalLevel||'—')}</span><span><b>مؤشر الأداء:</b>${esc(o.kpi||'—')}</span><span><b>الإدارات:</b>${esc(o.depts.join('، ')||'—')}</span></div>
    <div class="fgrid">
     <div class="f"><label>حالة الجلسة</label><select name="status">${opt(SESS_ST,s.status)}</select></div>
@@ -515,12 +536,13 @@ function saveSession(){const f=$('sessForm');if(!f||!CUR)return;const s=CUR;cons
   if(fd.status==='منفذ'&&!fd.from){toast('حدد تاريخ التنفيذ',true);return}
   if(fd.to&&fd.from&&fd.to<fd.from)fd.to=fd.from;
   const att=ATT.filter(a=>String(a.name||'').trim()||String(a.code||'').trim());
-  const r=Object.assign({},s.rec||{},{key:s.key,progId:s.prog.id,g:s.g,pFrom:s.pFrom,pTo:s.pTo,status:fd.status,from:fd.from,to:fd.to||fd.from,hours:fd.hours,trainer:fd.trainer.trim(),venue:fd.venue.trim(),
-    costT:fd.costT,costL:fd.costL,attCount:fd.attCount,l1:fd.l1,notes:fd.notes,att,updatedAt:new Date().toISOString(),snap:{code:s.prog.code,name:s.prog.name,cat:s.prog.cat,method:s.prog.method,hours:s.prog.hours}});
+  const T=fd.relink?M.slots.find(x=>x.key===fd.relink)||s:s;if(T!==s)delete R.recs[s.key];
+  const r=Object.assign({},s.rec||{},{key:T.key,progId:T.prog.id,g:T.g,pFrom:T.pFrom,pTo:T.pTo,status:fd.status,from:fd.from,to:fd.to||fd.from,hours:fd.hours,trainer:fd.trainer.trim(),venue:fd.venue.trim(),
+    costT:fd.costT,costL:fd.costL,attCount:fd.attCount,l1:fd.l1,notes:fd.notes,att,updatedAt:new Date().toISOString(),snap:{code:T.prog.code,name:T.prog.name,cat:T.prog.cat,method:T.prog.method,hours:T.prog.hours}});
   if(fd.seats!==undefined)r.seats=fd.seats;
   if(r.trainer&&!R.trainers.some(t=>normKey(t.name)===normKey(r.trainer)))R.trainers.push({id:uid(),name:r.trainer,type:/داخل/.test(s.prog.method)?'داخلي':'خارجي',org:s.prog.provider||'',phone:'',spec:''});
   const idx=empIdx();att.forEach(a=>{if(a.code&&!idx[String(a.code).trim()]&&a.name){const e={code:String(a.code).trim(),name:a.name,dept:a.dept||'',branch:a.branch||'',job:a.job||''};R.employees.push(e);idx[e.code]=e}});
-  R.recs[s.key]=r;save();closeModal();render();toast('تم حفظ تسجيل الجلسة')}
+  R.recs[T.key]=r;save();closeModal();render();toast(T!==s?'تمت إعادة ربط التسجيل بالخطة الحالية':'تم حفظ تسجيل الجلسة')}
 function clearSession(){if(!CUR||!confirm('مسح كل بيانات التنفيذ والحضور لهذه الجلسة؟'))return;const s=CUR;delete R.recs[s.key];
   if(s.prog.adhoc&&!s.prog.orphan&&!Object.values(R.recs).some(r=>r.progId===s.prog.id)){R.adhoc=R.adhoc.filter(a=>a.id!==s.prog.id)}save();closeModal();render();toast('تم المسح')}
 function printSession(){document.body.classList.add('print-modal');window.print();setTimeout(()=>document.body.classList.remove('print-modal'),400)}
@@ -602,15 +624,42 @@ function openEval(id){const o=M.byId[id];const ev=R.evals[id]||{};const l3=ev.l3
   </form><div class="mf"><button class="btn-out" onclick="closeModal()">إلغاء</button><button class="btn" onclick="saveEval('${id}')">حفظ</button></div>`,'sm')}
 function saveEval(id){const fd=Object.fromEntries(new FormData($('evForm')).entries());R.evals[id]={l3:{date:fd.l3date,score:fd.l3score,n:fd.l3n,note:fd.l3note},l4:{kpi:fd.l4kpi,base:fd.l4base,target:fd.l4target,actual:fd.l4actual,date:fd.l4date,note:fd.l4note}};save();closeModal();render();toast('تم حفظ التقييم')}
 
+/* ===================== تعديلات الخطة ===================== */
+function chgTxt(c){if(c.t==='add')return `<b>إضافة برنامج:</b> ${esc(c.code)} ${esc(c.name)} (${fmt(c.tr)} متدرب | ${fmt(c.cost)} ج.م)`;
+  if(c.t==='del')return `<b>حذف / إلغاء برنامج:</b> ${esc(c.code)} ${esc(c.name)} (كان ${fmt(c.tr)} متدرب | ${fmt(c.cost)} ج.م)`;
+  return `<b>تعديل:</b> ${esc(c.code)} ${esc(c.name)} — ${c.f.map(f=>`${f.l}: ${esc(f.from)} ← ${esc(f.to)}`).join(' | ')}`}
+const dlt=(a,b,money)=>{const d=b-a;if(!d)return '<span class="sub">بدون تغيير</span>';const p=a?Math.round(d/a*100):null;return `<b style="color:${d>0?'var(--warn)':'var(--tech)'}">${d>0?'+':''}${fmt(d)}${money?' ج.م':''}</b>${p!=null?` <span class="sub">(${d>0?'+':''}${p}%)</span>`:''}`};
+function vChanges(){const B=curBase();const cur=planSummary();const tc=planTotals(cur);const A=agg(M.slots);const started=M.progs.filter(o=>!o.adhoc&&o.slots.some(s=>s.done)).length;
+  let h=pageTop('تعديلات الخطة','الخطة التدريبية تقديرية وتُعدّل في نظام الاحتياجات (إضافة/حذف برامج، أعداد، ميزانية، فترات). النظام يقرأ التعديل تلقائيًا ويحسب كل المؤشرات على الخطة الحالية، ويقارنها بنسخة الأساس، ويحتفظ بسجل لكل تعديل.',
+    `<button class="btn" onclick="newBaseline()">اعتماد الخطة الحالية كنسخة أساس</button>`);
+  const UL=M.slots.filter(s=>s.unlinked);
+  if(UL.length)h+=sec('تسجيلات تحتاج إعادة ربط',`${UL.length} تسجيل تنفيذ لجلسات لم تعد موجودة في الخطة الحالية. البيانات محفوظة ولم تُحذف — افتح كل تسجيل واختر الجلسة المقابلة في الخطة الحالية، أو امسحه إن لم يعد مطلوبًا.`)+`<div class="tbl-wrap"><table><thead><tr><th>البرنامج (وقت التسجيل)</th><th class="num">المجموعة</th><th>التاريخ</th><th>الحالة</th><th class="num">الحضور</th><th></th></tr></thead><tbody>${UL.map(s=>`<tr><td>${cdc(s.prog.code)} ${esc(s.prog.name)}</td><td class="num">${s.g}</td><td>${rng(s.from,s.to)}</td><td>${stPill(s)}</td><td class="num">${s.done?s.attended:'—'}</td><td><button class="btn-out btn-sm" onclick="openSession('${s.key}')">إعادة ربط</button></td></tr>`).join('')}</tbody></table></div>`;
+  if(!B)return h+`<div class="alert info">لا توجد نسخة أساس بعد.</div>`;
+  const tb=planTotals(B.progs);const d=planDiff(B.progs,cur);const c=diffCount(d);const mb=B.meta||{};const mc=planMeta();
+  h+=`<div class="filters"><label class="sub">المقارنة مع نسخة الأساس:</label><select onchange="R.activeBase=this.value;save();render()">${opt(R.baselines.map(b=>[b.id,`${b.name} (${b.at})`]),B.id)}</select>${R.baselines.length>1?`<button class="btn-del" onclick="delBaseline('${B.id}')">حذف هذه النسخة</button>`:''}<span class="sub">${R.baselines.length} نسخة محفوظة</span></div>`;
+  h+=sec('الأساس مقابل الخطة الحالية مقابل الفعلي')+`<div class="tbl-wrap"><table><thead><tr><th>المؤشر</th><th class="num">نسخة الأساس</th><th class="num">الخطة الحالية</th><th class="num">التغير</th><th class="num">الفعلي حتى الآن</th><th class="num">نسبة الإنجاز من الحالية</th></tr></thead><tbody>
+    <tr><td>البرامج</td><td class="num">${fmt(tb.n)}</td><td class="num">${fmt(tc.n)}</td><td class="num">${dlt(tb.n,tc.n)}</td><td class="num">${fmt(started)} بدأ</td><td class="num">${pc(pct(started,tc.n))}</td></tr>
+    <tr><td>الجلسات / المجموعات</td><td class="num">${fmt(tb.ss)}</td><td class="num">${fmt(tc.ss)}</td><td class="num">${dlt(tb.ss,tc.ss)}</td><td class="num">${fmt(A.done)} منفذة</td><td class="num">${pc(pct(A.done,tc.ss))}</td></tr>
+    <tr><td>المتدربون المستهدفون</td><td class="num">${fmt(tb.tr)}</td><td class="num">${fmt(tc.tr)}</td><td class="num">${dlt(tb.tr,tc.tr)}</td><td class="num">${fmt(A.attended)} حضروا</td><td class="num">${pc(pct(A.attended,tc.tr))}</td></tr>
+    <tr><td>ساعات التدريب</td><td class="num">${fmt(tb.hrs)}</td><td class="num">${fmt(tc.hrs)}</td><td class="num">${dlt(tb.hrs,tc.hrs)}</td><td class="num">${fmt(A.hours)}</td><td class="num">${pc(pct(A.hours,tc.hrs))}</td></tr>
+    <tr><td>الميزانية (ج.م)</td><td class="num">${fmt(tb.cost)}</td><td class="num">${fmt(tc.cost)}</td><td class="num">${dlt(tb.cost,tc.cost,1)}</td><td class="num">${fmt(A.cost)} منصرف</td><td class="num">${pc(pct(A.cost,tc.cost))}</td></tr>
+    ${mb.needs!=null?`<tr><td>الاحتياجات المسجلة / المرتبطة ببرامج</td><td class="num">${fmt(mb.needs)} / ${fmt(mb.linked)}</td><td class="num">${fmt(mc.needs)} / ${fmt(mc.linked)}</td><td class="num">${dlt(mb.linked,mc.linked)}</td><td></td><td></td></tr>`:''}
+  </tbody></table></div>`;
+  h+=sec(`التعديلات على مستوى البرامج (${d.length})`,`${c.add} مضاف | ${c.del} محذوف أو ملغي | ${c.mod} معدّل`)+`<div class="tbl-wrap"><table><thead><tr><th>النوع</th><th>البرنامج</th><th>البند</th><th>في الأساس</th><th>في الخطة الحالية</th><th class="num">الفرق</th></tr></thead><tbody>${d.flatMap(x=>x.t==='mod'?x.f.map((f,i)=>`<tr><td>${i?'':'<span class="st post">معدّل</span>'}</td><td>${i?'':cdc(x.code)+' '+esc(x.name)}</td><td>${f.l}</td><td>${esc(f.from)}</td><td><b>${esc(f.to)}</b></td><td class="num">${f.d!=null?(f.d>0?'+':'')+fmt(f.d,1):''}</td></tr>`):[`<tr><td><span class="st ${x.t==='add'?'done':'late'}">${x.t==='add'?'مضاف':'محذوف'}</span></td><td>${cdc(x.code)} ${esc(x.name)}</td><td>البرنامج كاملًا</td><td>${x.t==='del'?`${fmt(x.tr)} متدرب | ${fmt(x.cost)} ج.م`:'—'}</td><td>${x.t==='add'?`${fmt(x.tr)} متدرب | ${fmt(x.cost)} ج.م`:'—'}</td><td></td></tr>`]).join('')||'<tr><td colspan="6" class="empty">الخطة الحالية مطابقة لنسخة الأساس</td></tr>'}</tbody></table></div>`;
+  h+=sec('سجل التعديلات المرصودة تلقائيًا','كل مرة تتغير فيها الخطة في نظام الاحتياجات يُسجَّل هنا ما تغيّر وتوقيته (آخر 300 تعديل).')+`<div class="list">${R.planLog.slice(0,60).map(e=>{const k=diffCount(e.changes);return `<details class="li" style="display:block;cursor:default"><summary style="cursor:pointer;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span><b>${e.at.slice(0,10)}</b> <span class="sub">${e.at.slice(11,16)}</span> — ${k.add?k.add+' مضاف ':''}${k.del?k.del+' محذوف ':''}${k.mod?k.mod+' معدّل':''}</span><span class="sub">المتدربون ${fmt(e.before.tr)} ← ${fmt(e.after.tr)} | الميزانية ${fmt(e.before.cost)} ← ${fmt(e.after.cost)}</span></summary><ul style="margin:8px 0 0">${e.changes.map(c=>`<li>${chgTxt(c)}</li>`).join('')}</ul></details>`}).join('')||'<div class="empty">لم تُرصد تعديلات بعد. أي تعديل في نظام الاحتياجات سيظهر هنا تلقائيًا.</div>'}</div>`;
+  return h}
+function newBaseline(){const n=prompt('اسم نسخة الأساس:',`الخطة المعتمدة ${today()}`);if(!n)return;const b={id:uid(),name:n.trim(),at:today(),src:PLAN_AT||PLAN_SRC,progs:planSummary(),meta:planMeta()};R.baselines.push(b);R.activeBase=b.id;save();render();toast('تم حفظ نسخة الأساس — ستُقارن بها أي تعديلات لاحقة')}
+function delBaseline(id){if(R.baselines.length<2||!confirm('حذف نسخة الأساس هذه؟'))return;R.baselines=R.baselines.filter(b=>b.id!==id);R.activeBase='';save();render()}
+
 /* ===================== الميزانية ===================== */
-function vBudget(){const L=M.progs.filter(o=>o.planCost||o.slots.some(s=>s.cost));const tp=L.reduce((a,o)=>a+o.planCost,0);const ta=agg(M.slots).cost;const cap=+PS().budgetCap||0;
+function vBudget(){const BB=curBase();const bp=BB?BB.progs:{};const L=M.progs.filter(o=>o.planCost||o.slots.some(s=>s.cost)||(bp[o.id]&&bp[o.id].cost));const tp=L.reduce((a,o)=>a+o.planCost,0);const ta=agg(M.slots).cost;const cap=+PS().budgetCap||0;
   const mm=MONTHS.map((_,i)=>M.slots.filter(s=>s.month===i).reduce((a,s)=>a+s.cost,0));const mp=MONTHS.map((_,i)=>M.progs.filter(o=>!o.adhoc).reduce((a,o)=>{const n=o.slots.filter(s=>s.status!=='ملغي').length||1;return a+o.slots.filter(s=>s.month===i&&s.status!=='ملغي').length*o.planCost/n},0));const mx=Math.max(1,...mm,...mp);
   const done=M.progs.filter(o=>!o.adhoc&&progStatus(o)==='مكتمل');const dv=done.reduce((a,o)=>a+agg(o.slots).cost-o.planCost,0);
   return pageTop('الميزانية — المخطط مقابل الفعلي','التكلفة المخططة من نظام الاحتياجات (ميزانية الجهة الخارجية + اللوجستيات) مقابل التكلفة الفعلية المسجلة لكل جلسة.',`<button class="btn-out" onclick="exportExcel()">تصدير Excel</button>`)+
-  `<div class="kpis">${kpi('الميزانية المخططة',`${fmt(tp)}<small>ج.م</small>`,cap?`سقف الميزانية: ${fmt(cap)} ج.م`:'')}${kpi('المنصرف الفعلي',`${fmt(ta)}<small>ج.م</small>`,`${pct(ta,tp)}% من المخطط`,pct(ta,tp),true)}${kpi('المتبقي',`${fmt(tp-ta)}<small>ج.م</small>`)}${kpi('انحراف البرامج المكتملة',`${dv>0?'+':''}${fmt(dv)}<small>ج.م</small>`,`${done.length} برنامج مكتمل | ${dv>0?'تجاوز':'وفر'}`)}${kpi('تكلفة ساعة المتدرب',agg(M.slots).manHours?`${fmt(ta/agg(M.slots).manHours,1)}<small>ج.م</small>`:'—')}</div>
+  `<div class="kpis">${BB?kpi('ميزانية نسخة الأساس',`${fmt(planTotals(bp).cost)}<small>ج.م</small>`,esc(BB.name)):''}${kpi('الميزانية المخططة (الحالية)',`${fmt(tp)}<small>ج.م</small>`,cap?`سقف الميزانية: ${fmt(cap)} ج.م`:BB?`التغير عن الأساس: ${tp-planTotals(bp).cost>0?'+':''}${fmt(tp-planTotals(bp).cost)} ج.م`:'')}${kpi('المنصرف الفعلي',`${fmt(ta)}<small>ج.م</small>`,`${pct(ta,tp)}% من المخطط`,pct(ta,tp),true)}${kpi('المتبقي',`${fmt(tp-ta)}<small>ج.م</small>`)}${kpi('انحراف البرامج المكتملة',`${dv>0?'+':''}${fmt(dv)}<small>ج.م</small>`,`${done.length} برنامج مكتمل | ${dv>0?'تجاوز':'وفر'}`)}${kpi('تكلفة ساعة المتدرب',agg(M.slots).manHours?`${fmt(ta/agg(M.slots).manHours,1)}<small>ج.م</small>`:'—')}</div>
   <div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px;font-size:15px">الإنفاق الشهري: المخطط مقابل الفعلي</h3><div class="legend"><span><i style="background:var(--c-track)"></i>مخطط</span><span><i style="background:var(--c-act)"></i>فعلي</span></div>
   <div class="mchart">${mm.map((x,i)=>`<div class="mcol" data-tip="${MONTHS[i]}\nمخطط: ${fmt(mp[i])} ج.م\nفعلي: ${fmt(x)} ج.م"><div class="stack"><div class="trk" style="height:${mp[i]/mx*100}%"></div><div class="act" style="height:${x/mx*100}%"></div></div></div>`).join('')}</div><div class="mlabels">${MONTHS.map(m=>`<span>${m.slice(0,3)}</span>`).join('')}</div></div>
-  ${sec('حسب البرنامج')}<div class="tbl-wrap"><table><thead><tr><th>البرنامج</th><th>الأسلوب</th><th class="num">المخطط</th><th class="num">الفعلي</th><th class="num">الانحراف</th><th class="num">نسبة الصرف</th><th>الحالة</th></tr></thead><tbody>${L.map(o=>{const a=agg(o.slots).cost;const ps=progStatus(o);return `<tr><td>${cdc(o.code)} ${esc(o.name)}</td><td class="sub">${esc(o.method)}</td><td class="num">${fmt(o.planCost)}</td><td class="num">${fmt(a)}</td><td class="num" style="color:${a>o.planCost&&o.planCost?'var(--danger)':'inherit'}">${fmt(a-o.planCost)}</td><td class="num">${o.planCost?pc(pct(a,o.planCost)):'—'}</td><td><span class="st ${progStCls[ps]}">${ps}</span></td></tr>`}).join('')}</tbody><tfoot><tr><td colspan="2">الإجمالي</td><td class="num">${fmt(tp)}</td><td class="num">${fmt(ta)}</td><td class="num">${fmt(ta-tp)}</td><td class="num">${pc(pct(ta,tp))}</td><td></td></tr></tfoot></table></div>`}
+  ${sec('حسب البرنامج')}<div class="tbl-wrap"><table><thead><tr><th>البرنامج</th><th>الأسلوب</th>${BB?'<th class="num">الأساس</th>':''}<th class="num">المخطط الحالي</th><th class="num">الفعلي</th><th class="num">الانحراف</th><th class="num">نسبة الصرف</th><th>الحالة</th></tr></thead><tbody>${L.map(o=>{const a=agg(o.slots).cost;const ps=progStatus(o);return `<tr><td>${cdc(o.code)} ${esc(o.name)}</td><td class="sub">${esc(o.method)}</td>${BB?`<td class="num sub">${bp[o.id]?fmt(bp[o.id].cost):'جديد'}</td>`:''}<td class="num">${fmt(o.planCost)}</td><td class="num">${fmt(a)}</td><td class="num" style="color:${a>o.planCost&&o.planCost?'var(--danger)':'inherit'}">${fmt(a-o.planCost)}</td><td class="num">${o.planCost?pc(pct(a,o.planCost)):'—'}</td><td><span class="st ${progStCls[ps]}">${ps}</span></td></tr>`}).join('')}</tbody><tfoot><tr><td colspan="2">الإجمالي</td>${BB?`<td class="num">${fmt(planTotals(bp).cost)}</td>`:''}<td class="num">${fmt(tp)}</td><td class="num">${fmt(ta)}</td><td class="num">${fmt(ta-tp)}</td><td class="num">${pc(pct(ta,tp))}</td><td></td></tr></tfoot></table></div>`}
 
 /* ===================== تغطية الاحتياجات ===================== */
 let NF={dept:'',st:''};
@@ -656,7 +705,8 @@ function reportData(){const a=RP.from,b=RP.to;const S=M.slots;const inR=s=>s.fro
   const due=S.filter(s=>inR(s));const done=due.filter(s=>s.done);const A=agg(due);const nb=new Date(pd(b));nb.setDate(nb.getDate()+1);const ne=new Date(nb);ne.setDate(ne.getDate()+6);
   const next=S.filter(s=>s.pending&&s.from>=iso(nb)&&s.from<=iso(ne));const ytd=S.filter(s=>s.from&&s.from<=b);const Y=agg(ytd);
   const late=S.filter(s=>s.overdue);const issues=due.filter(s=>s.status==='مؤجل'||s.status==='ملغي');
-  return{a,b,due,done,A,next,nb:iso(nb),ne:iso(ne),Y,ytdN:ytd.length,late,issues}}
+  const log=R.planLog.filter(e=>e.at.slice(0,10)>=a&&e.at.slice(0,10)<=b);const chg=[];log.slice().reverse().forEach(e=>e.changes.forEach(c=>chg.push(c)));
+  return{a,b,due,done,A,next,nb:iso(nb),ne:iso(ne),Y,ytdN:ytd.length,late,issues,chg}}
 function drawReport(){const el=$('repBox');if(!el)return;const d=reportData();const A=d.A,Y=d.Y;
   const row=s=>`<tr><td>${rng(s.from,s.to)}</td><td>${cdc(s.prog.code)} ${esc(s.prog.name)}</td><td class="num">${s.g}</td><td>${chip(s.prog.cat)}</td><td>${esc(s.trainer||'—')}</td><td class="num">${s.done?s.attended:'—'}</td><td class="num">${s.done?fmt(s.attended*s.hours):'—'}</td><td class="num">${s.l1!=null?pc(Math.round(s.l1/5*100)):'—'}</td><td>${stPill(s)}</td></tr>`;
   const th=`<thead><tr><th>التاريخ</th><th>البرنامج</th><th class="num">مجموعة</th><th>الفئة</th><th>المدرب</th><th class="num">المتدربون</th><th class="num">ساعات متدرب</th><th class="num">الرضا</th><th>الحالة</th></tr></thead>`;
@@ -665,6 +715,7 @@ function drawReport(){const el=$('repBox');if(!el)return;const d=reportData();co
    <h3>ثانيًا: الجلسات خلال الفترة (${d.due.length})</h3><div class="tbl-wrap"><table>${th}<tbody>${d.due.map(row).join('')||'<tr><td colspan="9" class="empty">لا توجد جلسات في هذه الفترة</td></tr>'}</tbody></table></div>
    <h3>ثالثًا: المتأخرات والانحرافات</h3>${d.late.length||d.issues.length?`<ul>${d.issues.map(s=>`<li>${s.status}: ${esc(s.prog.name)} (مجموعة ${s.g}) ${s.rec&&s.rec.notes?'— '+esc(s.rec.notes):''}</li>`).join('')}${d.late.length?`<li><b>${d.late.length} جلسة متأخرة</b> حتى اليوم عن موعدها المخطط دون تسجيل تنفيذ: ${d.late.slice(0,6).map(s=>esc(s.prog.name)).join('، ')}${d.late.length>6?' ...':''}</li>`:''}</ul>`:'<p class="sub">لا توجد انحرافات.</p>'}
    <h3>رابعًا: المخطط للأسبوع التالي (${rng(d.nb,d.ne)})</h3><div class="tbl-wrap"><table>${th}<tbody>${d.next.map(row).join('')||'<tr><td colspan="9" class="empty">لا توجد جلسات مخططة</td></tr>'}</tbody></table></div>
+   <h3>تعديلات الخطة خلال الفترة (${d.chg.length})</h3>${d.chg.length?`<ul>${d.chg.slice(0,20).map(c=>`<li>${chgTxt(c)}</li>`).join('')}</ul>${d.chg.length>20?'<p class="sub">... التفاصيل الكاملة في صفحة تعديلات الخطة</p>':''}`:'<p class="sub">لم تُرصد تعديلات على الخطة خلال الفترة.</p>'}
    <h3>خامسًا: الموقف التراكمي من بداية العام حتى ${fmtD(d.b)}</h3><div class="kpis">${kpi('الجلسات',`${Y.done}<small>من ${d.ytdN-Y.cancel} مستحقة</small>`,'',pct(Y.done,d.ytdN-Y.cancel))}${kpi('المتدربون',fmt(Y.attended))}${kpi('ساعات متدرب',fmt(Y.manHours))}${kpi('رضا المتدربين',Y.l1pct!=null?pc(Y.l1pct):'—')}${kpi('التكلفة',`${fmt(Y.cost)}<small>ج.م</small>`)}</div>
    <h3>نص التقرير (جاهز للنسخ في البريد / واتساب)</h3><textarea id="repTxt" style="min-height:260px" readonly>${esc(reportText(d))}</textarea></div>`}
 function reportText(d){const A=d.A,Y=d.Y;const L=[];
@@ -678,6 +729,7 @@ function reportText(d){const A=d.A,Y=d.Y;const L=[];
   if(d.done.length){L.push('▪ البرامج المنفذة:');const g={};d.done.forEach(s=>{g[s.prog.name]=g[s.prog.name]||{n:0,a:0};g[s.prog.name].n++;g[s.prog.name].a+=s.attended});Object.entries(g).forEach(([k,v])=>L.push(`• ${k}: ${v.n} جلسة | ${v.a} متدرب`));L.push('')}
   if(d.issues.length||d.late.length){L.push('▪ الانحرافات:');d.issues.forEach(s=>L.push(`• ${s.status}: ${s.prog.name} (مجموعة ${s.g})${s.rec&&s.rec.notes?' — '+s.rec.notes:''}`));if(d.late.length)L.push(`• ${d.late.length} جلسة متأخرة عن موعدها دون تسجيل تنفيذ`);L.push('')}
   L.push(`▪ المخطط للأسبوع التالي (${d.nb} إلى ${d.ne}): ${d.next.length} جلسة`);d.next.slice(0,10).forEach(s=>L.push(`• ${s.from}: ${s.prog.name} (مجموعة ${s.g})`));L.push('');
+  if(d.chg.length){L.push(`▪ تعديلات الخطة خلال الفترة (${d.chg.length}):`);d.chg.slice(0,10).forEach(c=>L.push('• '+chgTxt(c).replace(/<[^>]+>/g,'')));L.push('')}
   L.push(`▪ التراكمي حتى ${d.b}: ${Y.done} جلسة من ${d.ytdN-Y.cancel} مستحقة (${pct(Y.done,d.ytdN-Y.cancel)}%) | ${fmt(Y.attended)} متدرب | ${fmt(Y.manHours)} ساعة متدرب | ${fmt(Y.cost)} ج.م`);
   return L.join('\n')}
 function copyReport(){const t=$('repTxt');if(!t)return;t.select();try{navigator.clipboard.writeText(t.value).then(()=>toast('تم نسخ نص التقرير'),()=>{document.execCommand('copy');toast('تم نسخ نص التقرير')})}catch(e){document.execCommand('copy');toast('تم نسخ نص التقرير')}}
@@ -693,8 +745,8 @@ function vSet(){const st=R.settings;const hasPw=!!lsGet(PWKEY);
   sec('النسخ الاحتياطي والتصدير','البيانات محفوظة على هذا المتصفح. خذ نسخة احتياطية JSON أسبوعيًا، أو انقلها لجهاز آخر بالاستيراد.')+`<div class="card"><div class="acts"><button class="btn" onclick="exportJSON()">تنزيل نسخة احتياطية JSON</button><button class="btn-out" onclick="$('fileJ').click()">استعادة نسخة احتياطية</button><button class="btn-out" onclick="exportExcel()">تصدير كل البيانات Excel</button><button class="btn-out" style="color:var(--danger)" onclick="clearAll()">حذف كل بيانات التنفيذ</button></div></div>`+
   sec('الأمان')+`<div class="card"><p class="sub" style="margin-top:0">${hasPw?'النظام محمي بكلمة سر تُطلب عند كل فتح.':'لا توجد كلمة سر حاليًا. يُنصح بتعيين كلمة سر لحماية بيانات الموظفين.'}</p><div class="fgrid">${hasPw?'<div class="f"><label>كلمة السر الحالية</label><input type="password" id="pw0"></div>':''}<div class="f"><label>كلمة السر الجديدة</label><input type="password" id="pw1"></div><div class="f"><label>تأكيد كلمة السر</label><input type="password" id="pw2"></div></div><div class="acts" style="margin-top:10px"><button class="btn" onclick="setPw()">${hasPw?'تغيير كلمة السر':'تعيين كلمة السر'}</button>${hasPw?'<button class="btn-out" onclick="removePw()">إلغاء الحماية</button><button class="btn-out" onclick="lockNow()">قفل الآن</button>':''}</div></div></div>`}
 function saveSet(){const st=R.settings;st.passMark=num($('s_pass').value)||70;st.l3Days=num($('s_l3').value)||90;st.hoursTarget=num($('s_ht').value);st.venues=[...new Set($('s_ven').value.split('\n').map(x=>x.trim()).filter(Boolean))];save();render();toast('تم حفظ الإعدادات')}
-function resetPlan(){try{localStorage.removeItem(PCACHE)}catch(e){}if(typeof PLAN_SNAPSHOT!=='undefined')setPlan(PLAN_SNAPSHOT,'snapshot',PLAN_SNAPSHOT_AT);render();toast('تم الرجوع للنسخة المدمجة')}
-function importPlan(file){if(!file)return;const rd=new FileReader();rd.onload=e=>{try{const x=JSON.parse(e.target.result);if(!setPlan(x,'import',new Date().toLocaleString('en-GB')))throw 0;cachePlan('import');render();toast(`تم استيراد الخطة: ${P.programs.length} برنامج`)}catch(err){toast('الملف ليس نسخة صحيحة من نظام الاحتياجات',true)}};rd.readAsText(file)}
+function resetPlan(){try{localStorage.removeItem(PCACHE)}catch(e){}if(typeof PLAN_SNAPSHOT!=='undefined')setPlan(PLAN_SNAPSHOT,'snapshot',PLAN_SNAPSHOT_AT);trackPlan();render();toast('تم الرجوع للنسخة المدمجة')}
+function importPlan(file){if(!file)return;const rd=new FileReader();rd.onload=e=>{try{const x=JSON.parse(e.target.result);if(!setPlan(x,'import',new Date().toLocaleString('en-GB')))throw 0;cachePlan('import');trackPlan();render();toast(`تم استيراد الخطة: ${P.programs.length} برنامج`)}catch(err){toast('الملف ليس نسخة صحيحة من نظام الاحتياجات',true)}};rd.readAsText(file)}
 function mergeEmp(L){const idx=empIdx();let add=0,upd=0;L.forEach(a=>{const c=String(a.code||'').trim();if(!c)return;const e=idx[c];const v={code:c,name:a.name||'',dept:a.dept||'',branch:a.branch||'',job:a.job||''};if(e){Object.keys(v).forEach(k=>{if(v[k])e[k]=v[k]});upd++}else{R.employees.push(v);idx[c]=v;add++}});save();render();toast(`تمت إضافة ${add} وتحديث ${upd} موظف`)}
 function importEmp(file){readXL(file,rows=>mergeEmp(rowsToPeople(rows.map(r=>r.map(c=>String(c))))))}
 function pasteEmp(){openModal(`<div class="mh"><h3>لصق قائمة الموظفين</h3><button class="x" onclick="closeModal()">×</button></div><div class="mb"><p class="sub">الأعمدة: الكود، الاسم، الإدارة، الفرع، الوظيفة (صف العناوين اختياري).</p><textarea id="pasteE" style="min-height:240px"></textarea></div><div class="mf"><button class="btn-out" onclick="closeModal()">إلغاء</button><button class="btn" onclick="const L=rowsToPeople(parseRows($('pasteE').value));closeModal();mergeEmp(L)">إضافة</button></div>`,'sm')}
@@ -721,13 +773,14 @@ function exportExcel(){buildModel();const r1=x=>x==null?'':Math.round(x*10)/10;
   const needs=P.needs.map(n=>{const o=n.programId&&M.byId[n.programId];return{'كود الاحتياج':n.code,'الاحتياج':n.title,'الإدارة':n.dept,'العدد المطلوب':+n.trainees||0,'البرنامج':o?o.code+' '+o.name:'','حالة التلبية':needState(n)}});
   const evals=M.progs.filter(o=>o.slots.some(s=>s.done)).map(o=>{const a=agg(o.slots);const ev=R.evals[o.id]||{};const l3=ev.l3||{},l4=ev.l4||{};return{'البرنامج':o.code+' '+o.name,'المستوى المستهدف':o.evalLevel,'L1 الرضا %':a.l1pct??'','L2 قبلي':r1(a.pre),'L2 بعدي':r1(a.post),'نسبة النجاح %':a.posted?pct(a.pass,a.posted):'','L3 التطبيق %':l3.score||'','L3 التاريخ':l3.date||'','L4 المؤشر':l4.kpi||o.kpi,'L4 قبل':l4.base||'','L4 المستهدف':l4.target||'','L4 الفعلي':l4.actual||''}});
   const tr=R.trainers.map(t=>{const ss=M.slots.filter(s=>s.done&&normKey(s.trainer)===normKey(t.name));const a=agg(ss);return{'المدرب':t.name,'النوع':t.type,'الجهة':t.org,'الجلسات':ss.length,'الساعات':a.hours,'المتدربون':a.attended,'الرضا %':a.l1pct??''}});
-  xlBook([['البرامج - مخطط مقابل فعلي',progs],['الجلسات',sess],['كشوف الحضور',att],['السجل التدريبي للموظفين',emps],['تغطية الاحتياجات',needs],['التقييم',evals],['المدربون',tr]],`سجل_التدريب_${YEAR()}`)}
+  const B=curBase();const chgRows=B?planDiff(B.progs,planSummary()).flatMap(c=>c.t==='mod'?c.f.map(f=>({'النوع':'معدّل','الكود':c.code,'البرنامج':c.name,'البند':f.l,'في الأساس':f.from,'في الخطة الحالية':f.to})):[{'النوع':c.t==='add'?'مضاف':'محذوف','الكود':c.code,'البرنامج':c.name,'البند':'البرنامج كاملًا','في الأساس':c.t==='add'?'':`${fmt(c.tr)} متدرب | ${fmt(c.cost)} ج.م`,'في الخطة الحالية':c.t==='add'?`${fmt(c.tr)} متدرب | ${fmt(c.cost)} ج.م`:''}]):[];
+  xlBook([['البرامج - مخطط مقابل فعلي',progs],['تعديلات الخطة عن الأساس',chgRows],['الجلسات',sess],['كشوف الحضور',att],['السجل التدريبي للموظفين',emps],['تغطية الاحتياجات',needs],['التقييم',evals],['المدربون',tr]],`سجل_التدريب_${YEAR()}`)}
 
 /* ===================== تشغيل ===================== */
 function applyTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem(THKEY,t)}catch(e){}}
 function toggleTheme(){applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')}
 applyTheme(lsGet(THKEY)||'dark');
-loadPlan();render();
+loadPlan();trackPlan();render();
 if(lsGet(PWKEY)&&(()=>{try{return sessionStorage.getItem(UNLK)!=='1'}catch(e){return true}})())lockNow();
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('modal2')&&$('modal2').classList.contains('show'))closeModal2();else closeModal()}});
 pullPlan(false);setInterval(()=>{if(!document.hidden)pullPlan(false)},300000);
