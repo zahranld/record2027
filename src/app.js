@@ -308,9 +308,9 @@ const HDR={phone:/موبايل|محمول|هاتف|تليفون|جوال|وات�
 function matchHdr(h){const hm={};Object.keys(HDR).forEach(k=>{const i=h.findIndex((c,j)=>HDR[k].test(c)&&!(k==='name'&&/برنامج|دورة|مدرب|مدير/.test(c))&&!(k==='code'&&/برنامج|دورة/.test(c))&&!Object.values(hm).includes(j));if(i>=0)hm[k]=i});return hm}
 /* يتعرف على صف العناوين أينما كان (أول 25 صفًا) — يدعم النماذج الرسمية TR-P-F03 / F09 */
 function rowsToPeople(rows){if(!rows.length)return[];let map=null;
-  for(let r=0;r<Math.min(rows.length,25);r++){const hm=matchHdr(rows[r].map(x=>String(x||'').trim()));if(Object.keys(hm).filter(k=>k!=='phone').length>=2&&(hm.name!=null||hm.code!=null)){map=hm;rows=rows.slice(r+1);break}}
+  for(let r=0;r<Math.min(rows.length,25);r++){const cells=rows[r].map(x=>String(x||'').trim());const hm=matchHdr(cells);const n=Object.keys(hm).filter(k=>k!=='phone').length;if((n>=2||(n===1&&cells.filter(Boolean).length===1))&&(hm.name!=null||hm.code!=null)){map=hm;rows=rows.slice(r+1);break}}
   return rows.map(r=>{let a;if(map){a={};Object.keys(map).forEach(k=>a[k]=String(r[map[k]]??'').trim())}
-    else if(r.length===1){const m=String(r[0]).match(/^(\d+)\s+(.+)$/);a=m?{code:m[1],name:m[2]}:{name:r[0]}}
+    else if(r.length===1){const v=String(r[0]).trim();const m=v.match(/^(\d+)\s+(.+)$/);a=m?{code:m[1],name:m[2]}:/^\d+$/.test(v)?{code:v}:{name:v}}
     else{const first=/^\d+$/.test(String(r[0]).trim());a=first?{code:r[0],name:r[1],dept:r[2],branch:r[3],job:r[4]}:{name:r[0],dept:r[1],branch:r[2],job:r[3]}}
     const st=String(a.st||'');a.st=/غائب|absent/i.test(st)?'غائب':/متأخر|late/i.test(st)?'متأخر':/اعتذ|excus/i.test(st)?'اعتذر':'حاضر';
     if(a.phone)a.phone=String(a.phone).replace(/[^\d+]/g,'');if(a.phone&&/^1\d{9}$/.test(a.phone))a.phone='0'+a.phone;
