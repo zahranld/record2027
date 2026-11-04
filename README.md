@@ -10,6 +10,8 @@
 ## دليل الاستخدام
 [دليل الاستخدام PDF خطوة بخطوة بالصور](docs/training-guide-2027.pdf) — متاح أيضًا على: `zahranld.github.io/record2027/docs/training-guide-2027.pdf`
 
+[نماذج بيانات الموظفين وكشف الحضور والترشيحات (Excel)](docs/employee-templates-2027.xlsx) — بنفس أعمدة الاستيراد في النظام.
+
 ## الوحدات
 
 | الوحدة | الوظيفة |
