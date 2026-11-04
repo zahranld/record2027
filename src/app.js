@@ -9,7 +9,7 @@ const ATT_ST=['حاضر','متأخر','غائب','اعتذر'];
 const INTERNAL='تدريب داخلي (قاعة)';
 /* رابط القراءة فقط لبيانات نظام الاحتياجات (نفس مصدر https://zahranld.github.io/plan2027/) */
 const PLAN_LINK={page:'https://zahranld.github.io/plan2027/',url:'https://oazwbhiuabdmevmlmfeq.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hendiaGl1YWJkbWV2bWxtZmVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwODQwMzgsImV4cCI6MjEwNzY2MDAzOH0.HYgpU1JHDGWBrEMMfQva8ZIzC7WnUAQcq1Cntdp5qNY'};
-const RKEY='zahran_trs_2027_v1',PCACHE='zahran_trs_plan_cache',THKEY='zahran_trs_theme',PWKEY='zahran_trs_pwh',UNLK='zahran_trs_unlocked';
+const RKEY='zahran_trs_2027_v1',PCACHE='zahran_trs_plan_cache',THKEY='zahran_trs_theme';
 
 /* ===================== أدوات ===================== */
 const $=id=>document.getElementById(id);
@@ -43,7 +43,7 @@ function sha256(msg){const ror=(x,n)=>(x>>>n)|(x<<(32-n));const by=new TextEncod
     for(let j=0;j<64;j++){const t1=(k+(ror(e,6)^ror(e,11)^ror(e,25))+((e&f)^(~e&g))+K256[j]+w[j])|0;const t2=((ror(a,2)^ror(a,13)^ror(a,22))+((a&b)^(a&c)^(b&c)))|0;k=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0}
     h=[h[0]+a,h[1]+b,h[2]+c,h[3]+d,h[4]+e,h[5]+f,h[6]+g,h[7]+k].map(x=>x|0)}
   return h.map(x=>(x>>>0).toString(16).padStart(8,'0')).join('')}
-const pwHash=p=>sha256('zahran-trs|'+p);
+const pwPrintSync=p=>sha256('zahran-trs-sync|'+p);
 
 /* ===================== بيانات الخطة (مصدر الربط) ===================== */
 let P={settings:{},needs:[],programs:[]},PLAN_SRC='snapshot',PLAN_AT='',PLAN_ST='';
@@ -88,7 +88,7 @@ function planDiff(a,b){const out=[];a=a||{};b=b||{};
 const diffCount=d=>({add:d.filter(x=>x.t==='add').length,del:d.filter(x=>x.t==='del').length,mod:d.filter(x=>x.t==='mod').length});
 const curBase=()=>R.baselines.find(b=>b.id===R.activeBase)||R.baselines[R.baselines.length-1]||null;
 function trackPlan(){if(!P.programs.length)return;const cur=planSummary();let ch=false;
-  if(!R.baselines.length){R.baselines.push({id:uid(),name:'النسخة التقديرية الأولى',at:today(),src:PLAN_AT||PLAN_SRC,progs:cur,meta:planMeta()});ch=true}
+  if(!R.baselines.length){R.baselines.push({id:uid(),name:'النسخة التقديرية الأولى',auto:true,at:today(),src:PLAN_AT||PLAN_SRC,progs:cur,meta:planMeta()});ch=true}
   if(R.lastSeen){const d=planDiff(R.lastSeen,cur);if(d.length){R.planLog.unshift({at:new Date().toISOString(),src:PLAN_SRC,changes:d,before:planTotals(R.lastSeen),after:planTotals(cur)});R.planLog=R.planLog.slice(0,300);ch=true}}
   if(!R.lastSeen||ch){R.lastSeen=cur;ch=true}if(ch)save()}
 
@@ -97,7 +97,7 @@ function defaultsR(){return{settings:{passMark:70,l3Days:90,hoursTarget:12,venue
   trainers:[],employees:[],recs:{},adhoc:[],evals:{},baselines:[],planLog:[],lastSeen:null,activeBase:''}}
 let R=loadR();
 function loadR(){const d=defaultsR();try{const x=JSON.parse(localStorage.getItem(RKEY)||'null');if(x){Object.assign(d.settings,x.settings||{});['trainers','employees','adhoc','baselines','planLog'].forEach(k=>{if(Array.isArray(x[k]))d[k]=x[k]});if(x.activeBase)d.activeBase=x.activeBase;['recs','evals','lastSeen'].forEach(k=>{if(x[k]&&typeof x[k]==='object')d[k]=x[k]})}}catch(e){}return d}
-function save(){try{localStorage.setItem(RKEY,JSON.stringify(R))}catch(e){toast('تعذر الحفظ على هذا المتصفح — صدّر نسخة احتياطية الآن',true)}}
+function save(){try{localStorage.setItem(RKEY,JSON.stringify(R))}catch(e){toast('تعذر الحفظ على هذا المتصفح — صدّر نسخة احتياطية الآن',true)}if(window.SBSync)window.SBSync.onLocalSave()}
 
 /* ===================== النموذج الموحد (خطة + تنفيذ) ===================== */
 let M=null;
@@ -164,8 +164,9 @@ function renderChrome(){
   $('logoBox').innerHTML=logoHTML()+`<span><small>نظام إدارة وتسجيل التدريب ${YEAR()}</small></span>`;
   const lp=$('linkPill');const live=PLAN_SRC==='live';
   lp.className='linkpill '+(live?'live':'snap');
-  const srcT=live?'مرتبط بالخطة (مباشر)':PLAN_SRC==='import'?'خطة مستوردة يدويًا':PLAN_SRC==='cache'?'آخر نسخة محفوظة من الخطة':'نسخة مدمجة من الخطة';lp.innerHTML=`<i></i>${PLAN_ST==='تعذر الاتصال'?(live?'آخر نسخة من الخطة':srcT)+' — غير متصل':PLAN_ST||srcT}`;if(PLAN_ST==='تعذر الاتصال')lp.className='linkpill snap';
+  const srcT=live?'الخطة: مباشر':PLAN_SRC==='import'?'الخطة: ملف مستورد':PLAN_SRC==='cache'?'الخطة: آخر نسخة':'الخطة: نسخة مدمجة';lp.innerHTML=`<i></i>${PLAN_ST==='تعذر الاتصال'?(live?'الخطة: آخر نسخة':srcT)+' (غير متصل)':PLAN_ST==='جارٍ التحديث...'?'الخطة: تحديث…':srcT}`;if(PLAN_ST==='تعذر الاتصال')lp.className='linkpill snap';
   lp.title='اضغط لتحديث البيانات من نظام الاحتياجات'+(PLAN_AT?` — آخر تحديث: ${PLAN_AT}`:'');
+  if(window.SBSync)window.SBSync.paint();
   $('ftOrg').innerHTML=`<b>${esc(ORG())}</b> | ${esc(UNIT())}`;
   document.title=`نظام إدارة وتسجيل التدريب ${YEAR()} | ${ORG()}`}
 function go(v){VIEW=v;closeModal();render();window.scrollTo(0,0)}
@@ -175,7 +176,8 @@ const printHead=()=>`<div class="print-head">${esc(ORG())} | ${esc(UNIT())} | ت
 const pageTop=(title,sub,acts='')=>printHead()+`<section class="pband"><div class="in"><div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</div><div class="acts">${acts}</div></div></section><div class="in wrap">`;
 const sec=(h,p)=>`<div class="sec"><h2>${h}</h2>${p?`<p>${p}</p>`:''}</div>`;
 const kpi=(l,v,s='',bar=null,hl=false)=>`<div class="kpi${hl?' hl':''}"><div class="l">${l}</div><div class="v">${v}</div>${s?`<div class="s">${s}</div>`:''}${bar!=null?`<div class="bar"><i style="width:${Math.min(100,bar)}%"></i></div>`:''}</div>`;
-function closeModal(){const m=$('modal');m.classList.remove('show');m.innerHTML='';document.body.classList.remove('print-modal')}
+let NEED_RENDER=false;
+function closeModal(){const m=$('modal');m.classList.remove('show');m.innerHTML='';document.body.classList.remove('print-modal');if(NEED_RENDER){NEED_RENDER=false;setTimeout(render,0)}}
 function openModal(html,cls=''){const m=$('modal');m.innerHTML=`<div class="modal ${cls}">${html}</div>`;m.classList.add('show')}
 /* tooltip */
 document.addEventListener('mouseover',e=>{const t=e.target.closest('[data-tip]');const tip=$('tip');if(!t){tip.style.display='none';return}tip.textContent=t.dataset.tip;tip.style.display='block'});
@@ -522,15 +524,15 @@ function reportText(d){const A=d.A,Y=d.Y;const L=[];
 function copyReport(){const t=$('repTxt');if(!t)return;t.select();try{navigator.clipboard.writeText(t.value).then(()=>toast('تم نسخ نص التقرير'),()=>{document.execCommand('copy');toast('تم نسخ نص التقرير')})}catch(e){document.execCommand('copy');toast('تم نسخ نص التقرير')}}
 
 /* ===================== الإعدادات ===================== */
-function vSet(){const st=R.settings;const hasPw=!!lsGet(PWKEY);
+function vSet(){const st=R.settings;
   return pageTop('الإعدادات','الربط بنظام الاحتياجات، معايير التقييم، بيانات الموظفين، النسخ الاحتياطي والأمان.')+
   sec('الربط بنظام الاحتياجات والخطة السنوية')+`<div class="card"><div class="info-row" style="margin:0 0 12px"><span><b>المصدر الحالي:</b>${PLAN_SRC==='live'?'مباشر من نظام الاحتياجات':PLAN_SRC==='import'?'ملف مستورد':PLAN_SRC==='cache'?'آخر نسخة محفوظة':'نسخة مدمجة داخل الملف'}</span><span><b>آخر تحديث:</b>${esc(PLAN_AT||'—')}</span><span><b>البرامج:</b>${P.programs.length}</span><span><b>الاحتياجات:</b>${P.needs.length}</span><span><b>الجلسات المخططة:</b>${M.slots.filter(s=>!s.prog.adhoc).length}</span></div>
    <p class="sub" style="margin-top:0">يقرأ النظام البرامج والجلسات والاحتياجات مباشرة من <a href="${PLAN_LINK.page}" target="_blank" rel="noopener">نظام الاحتياجات التدريبية</a> (قراءة فقط) عند كل فتح وكل 5 دقائق. أي تعديل على الخطة هناك يظهر هنا تلقائيًا، وتبقى بيانات التنفيذ محفوظة ومربوطة بكود البرنامج ورقم المجموعة.</p>
    <div class="acts"><button class="btn" onclick="pullPlan(true)">تحديث من نظام الاحتياجات الآن</button><button class="btn-out" onclick="$('fileP').click()">استيراد نسخة JSON من نظام الاحتياجات</button><button class="btn-out" onclick="resetPlan()">الرجوع للنسخة المدمجة</button></div></div>`+
   sec('معايير التنفيذ والتقييم')+`<div class="card"><div class="fgrid"><div class="f"><label>درجة النجاح في الاختبار البعدي %</label><input id="s_pass" type="number" value="${esc(st.passMark)}"></div><div class="f"><label>موعد متابعة L3 بعد التدريب (يوم)</label><input id="s_l3" type="number" value="${esc(st.l3Days)}"></div><div class="f"><label>المستهدف السنوي لساعات تدريب الموظف</label><input id="s_ht" type="number" value="${esc(st.hoursTarget)}"></div><div class="f wall"><label>أماكن التنفيذ (سطر لكل مكان)</label><textarea id="s_ven">${esc((st.venues||[]).join('\n'))}</textarea></div></div><div class="acts" style="margin-top:10px"><button class="btn" onclick="saveSet()">حفظ</button></div></div>`+
   `<div id="empSec">${sec('بيانات الموظفين (Master Data)',`${R.employees.length} موظف — تُستخدم لاستكمال الأسماء تلقائيًا من الكود ولمعرفة من لم يحصل على تدريب. الأعمدة: الكود، الاسم، الإدارة، الفرع، الوظيفة.`)}</div><div class="card"><div class="acts"><button class="btn-out" onclick="$('fileE').click()">استيراد من Excel</button><button class="btn-out" onclick="pasteEmp()">لصق من Excel</button><button class="btn-out" onclick="exportEmp()">تصدير القائمة</button><button class="btn-out" style="color:var(--danger)" onclick="if(confirm('حذف قائمة الموظفين؟ (لا يؤثر على كشوف الحضور)')){R.employees=[];save();render()}">حذف القائمة</button></div></div>`+
-  sec('النسخ الاحتياطي والتصدير','البيانات محفوظة على هذا المتصفح. خذ نسخة احتياطية JSON أسبوعيًا، أو انقلها لجهاز آخر بالاستيراد.')+`<div class="card"><div class="acts"><button class="btn" onclick="exportJSON()">تنزيل نسخة احتياطية JSON</button><button class="btn-out" onclick="$('fileJ').click()">استعادة نسخة احتياطية</button><button class="btn-out" onclick="exportExcel()">تصدير كل البيانات Excel</button><button class="btn-out" style="color:var(--danger)" onclick="clearAll()">حذف كل بيانات التنفيذ</button></div></div>`+
-  sec('الأمان')+`<div class="card"><p class="sub" style="margin-top:0">${hasPw?'النظام محمي بكلمة سر تُطلب عند كل فتح.':'لا توجد كلمة سر حاليًا. يُنصح بتعيين كلمة سر لحماية بيانات الموظفين.'}</p><div class="fgrid">${hasPw?'<div class="f"><label>كلمة السر الحالية</label><input type="password" id="pw0"></div>':''}<div class="f"><label>كلمة السر الجديدة</label><input type="password" id="pw1"></div><div class="f"><label>تأكيد كلمة السر</label><input type="password" id="pw2"></div></div><div class="acts" style="margin-top:10px"><button class="btn" onclick="setPw()">${hasPw?'تغيير كلمة السر':'تعيين كلمة السر'}</button>${hasPw?'<button class="btn-out" onclick="removePw()">إلغاء الحماية</button><button class="btn-out" onclick="lockNow()">قفل الآن</button>':''}</div></div></div>`}
+  sec('النسخ الاحتياطي والتصدير','البيانات محفوظة على الخادم المشترك ومتزامنة بين كل الأجهزة. الخادم يحتفظ بآخر نسخة فقط — خذ نسخة احتياطية JSON أسبوعيًا.')+`<div class="card"><div class="acts"><button class="btn" onclick="exportJSON()">تنزيل نسخة احتياطية JSON</button><button class="btn-out" onclick="$('fileJ').click()">استعادة نسخة احتياطية</button><button class="btn-out" onclick="exportExcel()">تصدير كل البيانات Excel</button><button class="btn-out" style="color:var(--danger)" onclick="clearAll()">حذف كل بيانات التنفيذ</button></div></div>`+
+  sec('المزامنة المشتركة بين الأجهزة','البيانات محفوظة على خادم مشترك ومحمية بكلمة السر — أي تعديل على أي جهاز يُرفع تلقائيًا خلال ثوانٍ، وتحديثات الأجهزة الأخرى تصل كل دقيقة. لو عدّل جهازان في نفس الوقت يُحفظ تعديل الاثنين.')+`<div class="card"><div class="fgrid"><div class="f"><label>اسم هذا الجهاز (اختياري)</label><input id="syncDevice" placeholder="مثال: مكتب التدريب" value="${esc(window.SBSync?window.SBSync.device():'')}" onchange="SBSync.setDevice(this.value)"></div></div><div class="acts" style="margin-top:10px"><button class="btn" onclick="SBSync.sync({manual:true})">مزامنة الآن ⟳</button><button class="btn-out" onclick="SBSync.logout()">تسجيل الخروج من هذا الجهاز</button></div><div id="syncLine" class="alert info" style="margin-bottom:0"></div></div>`}
 function saveSet(){const st=R.settings;st.passMark=num($('s_pass').value)||70;st.l3Days=num($('s_l3').value)||90;st.hoursTarget=num($('s_ht').value);st.venues=[...new Set($('s_ven').value.split('\n').map(x=>x.trim()).filter(Boolean))];save();render();toast('تم حفظ الإعدادات')}
 function resetPlan(){try{localStorage.removeItem(PCACHE)}catch(e){}if(typeof PLAN_SNAPSHOT!=='undefined')setPlan(PLAN_SNAPSHOT,'snapshot',PLAN_SNAPSHOT_AT);trackPlan();render();toast('تم الرجوع للنسخة المدمجة')}
 function importPlan(file){if(!file)return;const rd=new FileReader();rd.onload=e=>{try{const x=JSON.parse(e.target.result);if(!setPlan(x,'import',new Date().toLocaleString('en-GB')))throw 0;cachePlan('import');trackPlan();render();toast(`تم استيراد الخطة: ${P.programs.length} برنامج`)}catch(err){toast('الملف ليس نسخة صحيحة من نظام الاحتياجات',true)}};rd.readAsText(file)}
@@ -539,14 +541,9 @@ function importEmp(file){readXL(file,rows=>mergeEmp(rowsToPeople(rows.map(r=>r.m
 function pasteEmp(){openModal(`<div class="mh"><h3>لصق قائمة الموظفين</h3><button class="x" onclick="closeModal()">×</button></div><div class="mb"><p class="sub">الأعمدة: الكود، الاسم، الإدارة، الفرع، الوظيفة (صف العناوين اختياري).</p><textarea id="pasteE" style="min-height:240px"></textarea></div><div class="mf"><button class="btn-out" onclick="closeModal()">إلغاء</button><button class="btn" onclick="const L=rowsToPeople(parseRows($('pasteE').value));closeModal();mergeEmp(L)">إضافة</button></div>`,'sm')}
 function exportEmp(){const rows=R.employees.map(e=>({'الكود':e.code,'الاسم':e.name,'الإدارة':e.dept,'الفرع':e.branch,'الوظيفة':e.job}));xlBook([['الموظفين',rows]],'قائمة_الموظفين')}
 function exportJSON(){dl(new Blob([JSON.stringify(R,null,1)],{type:'application/json'}),`نسخة_احتياطية_سجل_التدريب_${today()}.json`)}
-function importJSON(file){if(!file)return;const rd=new FileReader();rd.onload=e=>{try{const x=JSON.parse(e.target.result);if(!x||typeof x.recs!=='object')throw 0;if(!confirm('سيتم استبدال بيانات التنفيذ الحالية بالنسخة المستوردة. متابعة؟'))return;localStorage.setItem(RKEY,JSON.stringify(x));R=loadR();render();toast('تمت استعادة النسخة الاحتياطية')}catch(err){toast('ملف غير صالح',true)}};rd.readAsText(file)}
-function clearAll(){if(!confirm('سيتم حذف كل بيانات التنفيذ والحضور والتقييم نهائيًا من هذا المتصفح. هل أخذت نسخة احتياطية؟'))return;R=defaultsR();save();render();toast('تم الحذف')}
+function importJSON(file){if(!file)return;const rd=new FileReader();rd.onload=e=>{try{const x=JSON.parse(e.target.result);if(!x||typeof x.recs!=='object')throw 0;if(!confirm('سيتم استبدال بيانات التنفيذ الحالية بالنسخة المستوردة على كل الأجهزة المتزامنة. متابعة؟'))return;localStorage.setItem(RKEY,JSON.stringify(x));R=loadR();render();toast('تمت استعادة النسخة الاحتياطية')}catch(err){toast('ملف غير صالح',true)}};rd.readAsText(file)}
+function clearAll(){if(!confirm('سيتم حذف كل بيانات التنفيذ والحضور والتقييم نهائيًا من كل الأجهزة المتزامنة. هل أخذت نسخة احتياطية؟'))return;R=defaultsR();save();render();toast('تم الحذف')}
 const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
-function setPw(){const h=lsGet(PWKEY);if(h&&pwHash(($('pw0')||{}).value||'')!==h){toast('كلمة السر الحالية غير صحيحة',true);return}const a=$('pw1').value,b=$('pw2').value;if(a.length<6){toast('كلمة السر 6 أحرف على الأقل',true);return}if(a!==b){toast('التأكيد غير مطابق',true);return}
-  try{localStorage.setItem(PWKEY,pwHash(a));sessionStorage.setItem(UNLK,'1')}catch(e){}render();toast('تم حفظ كلمة السر')}
-function removePw(){const h=lsGet(PWKEY);if(pwHash(($('pw0')||{}).value||'')!==h){toast('اكتب كلمة السر الحالية أولًا',true);return}try{localStorage.removeItem(PWKEY)}catch(e){}render();toast('تم إلغاء الحماية')}
-function lockNow(){if(!lsGet(PWKEY))return;try{sessionStorage.removeItem(UNLK)}catch(e){}closeModal();document.body.classList.add('locked');$('lkLogo').innerHTML=logoHTML();$('lkPw').value='';$('lkErr').textContent='';setTimeout(()=>$('lkPw').focus(),50)}
-let FAILS=0;function tryUnlock(){if(pwHash($('lkPw').value)===lsGet(PWKEY)){FAILS=0;try{sessionStorage.setItem(UNLK,'1')}catch(e){}document.body.classList.remove('locked');render();return}FAILS++;$('lkErr').textContent=`كلمة السر غير صحيحة (${FAILS})`;$('lkPw').select()}
 
 /* ===================== تصدير Excel ===================== */
 function xlBook(sheets,name){if(typeof XLSX==='undefined'){const [n,rows]=sheets[0];if(!rows.length){toast('لا توجد بيانات',true);return}const hd=Object.keys(rows[0]);dl(new Blob(['﻿'+[hd,...rows.map(r=>hd.map(h=>r[h]))].map(r=>r.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n')],{type:'text/csv'}),name+'.csv');toast('مكتبة Excel غير متاحة — تم تصدير CSV للورقة الأولى',true);return}
@@ -563,11 +560,106 @@ function exportExcel(){buildModel();const r1=x=>x==null?'':Math.round(x*10)/10;
   const B=curBase();const chgRows=B?planDiff(B.progs,planSummary()).flatMap(c=>c.t==='mod'?c.f.map(f=>({'النوع':'معدّل','الكود':c.code,'البرنامج':c.name,'البند':f.l,'في الأساس':f.from,'في الخطة الحالية':f.to})):[{'النوع':c.t==='add'?'مضاف':'محذوف','الكود':c.code,'البرنامج':c.name,'البند':'البرنامج كاملًا','في الأساس':c.t==='add'?'':`${fmt(c.tr)} متدرب | ${fmt(c.cost)} ج.م`,'في الخطة الحالية':c.t==='add'?`${fmt(c.tr)} متدرب | ${fmt(c.cost)} ج.م`:''}]):[];
   xlBook([['البرامج - مخطط مقابل فعلي',progs],['تعديلات الخطة عن الأساس',chgRows],['الجلسات',sess],['كشوف الحضور',att],['السجل التدريبي للموظفين',emps],['تغطية الاحتياجات',needs],['التقييم',evals],['المدربون',tr]],`سجل_التدريب_${YEAR()}`)}
 
+
+/* ===================== المزامنة المشتركة بين الأجهزة (Supabase) ===================== */
+/* كل البيانات تمر عبر دوال trs_* المحمية بكلمة السر؛ لا قراءة ولا كتابة مباشرة على الجداول */
+const SYNC_PW_KEY='zahran_trs_sync_pw';
+const SBSync=(function(){
+  const SB_URL=PLAN_LINK.url,SB_KEY=PLAN_LINK.key;
+  const OFF_KEY='zahran_trs_pw_print',BASE_KEY='zahran_trs_sb_base',DEV_KEY='zahran_trs_device';
+  const PUSH_DELAY=2000,POLL_EVERY=60*1000;
+  let pw='',busy=false,pending=false,pushTimer=null,lastSyncAt=0,started=false,ST={k:'off',t:'المزامنة غير مفعّلة'};
+  try{['zahran_trs_pwh','zahran_trs_unlocked'].forEach(k=>{localStorage.removeItem(k);sessionStorage.removeItem(k)})}catch(e){} /* القفل المحلي القديم */
+  const loadBase=()=>{try{return JSON.parse(localStorage.getItem(BASE_KEY)||'null')}catch(e){return null}};
+  const saveBase=b=>{try{localStorage.setItem(BASE_KEY,JSON.stringify(b))}catch(e){}};
+  const device=()=>{try{return localStorage.getItem(DEV_KEY)||''}catch(e){return ''}};
+  const setDevice=v=>{try{localStorage.setItem(DEV_KEY,String(v||'').trim())}catch(e){}};
+  function stable(v){if(v===null||typeof v!=='object')return JSON.stringify(v);if(Array.isArray(v))return '['+v.map(stable).join(',')+']';return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}'}
+  function hash(str){let h1=0xdeadbeef,h2=0x41c6ce57;for(let i=0;i<str.length;i++){const ch=str.charCodeAt(i);h1=Math.imul(h1^ch,2654435761);h2=Math.imul(h2^ch,1597334677)}
+    h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);return (4294967296*(2097151&h2)+(h1>>>0)).toString(36)}
+  const hRec=r=>hash(stable(r));
+  /* كل مجموعة بيانات تتحول لخريطة سجلات بمفتاح ثابت → دمج على مستوى السجل */
+  const COLS={trainers:x=>x&&x.id,employees:x=>x&&String(x.code||'').trim(),adhoc:x=>x&&x.id,baselines:x=>x&&x.id,planLog:x=>x&&hash(stable({at:x.at,c:x.changes}))};
+  const OBJS=['recs','evals'];const ALL=[...Object.keys(COLS),...OBJS,'_s'];
+  function toMaps(d){const m={};Object.keys(COLS).forEach(k=>{m[k]={};(d[k]||[]).forEach(r=>{const id=COLS[k](r);if(id)m[k][id]=r})});OBJS.forEach(k=>{m[k]=Object.assign({},d[k]||{})});
+    m._s={settings:d.settings||{},lastSeen:d.lastSeen||null,activeBase:d.activeBase||''};return m}
+  function fromMaps(m,local){const d=defaultsR();Object.keys(COLS).forEach(k=>{const ord=new Map((local[k]||[]).map((r,i)=>[COLS[k](r),i]));
+      d[k]=Object.entries(m[k]).sort((a,b)=>(ord.has(a[0])?ord.get(a[0]):1e9)-(ord.has(b[0])?ord.get(b[0]):1e9)).map(e=>e[1])});
+    d.planLog.sort((a,b)=>String(b.at).localeCompare(String(a.at)));d.planLog=d.planLog.slice(0,300);
+    OBJS.forEach(k=>d[k]=m[k]);d.settings=Object.assign(defaultsR().settings,(m._s.settings)||{});d.lastSeen=m._s.lastSeen||null;d.activeBase=m._s.activeBase||'';
+    /* نسخة أساس تلقائية واحدة فقط على مستوى كل الأجهزة (الأقدم) */
+    const autos=d.baselines.filter(b=>b.auto).sort((a,b)=>String(a.at).localeCompare(String(b.at))||String(a.id).localeCompare(String(b.id)));
+    if(autos.length>1){const drop=new Set(autos.slice(1).map(b=>b.id));d.baselines=d.baselines.filter(b=>!drop.has(b.id));if(drop.has(d.activeBase))d.activeBase=''}
+    return d}
+  const hashMaps=m=>{const h={};ALL.forEach(k=>{h[k]={};Object.keys(m[k]||{}).forEach(id=>h[k][id]=hRec(m[k][id]))});return h};
+  const dataHash=d=>hash(stable(hashMaps(toMaps(d))));
+  const newer=(a,b)=>(b&&a&&(b.updatedAt||'')>(a.updatedAt||''))?b:a;
+  function mergeMap(L,Rm,B){const out={};new Set([...Object.keys(L||{}),...Object.keys(Rm||{})]).forEach(id=>{const l=L[id],r=Rm[id],b=B?B[id]:undefined;
+      if(l!==undefined&&r!==undefined){const hl=hRec(l),hr=hRec(r);if(hl===hr||hr===b)out[id]=l;else if(hl===b)out[id]=r;else out[id]=newer(l,r)}
+      else if(l!==undefined){if(b&&hRec(l)===b)return;out[id]=l}
+      else if(r!==undefined){if(b&&hRec(r)===b)return;out[id]=r}});return out}
+  function merge(local,remote,base){const lm=toMaps(local),rm=toMaps(remote),m={};ALL.forEach(k=>m[k]=mergeMap(lm[k]||{},rm[k]||{},base&&base.h?base.h[k]:null));return fromMaps(m,local)}
+  const isEmpty=d=>!Object.keys(d.recs||{}).length&&!(d.employees||[]).length&&!(d.trainers||[]).length&&!(d.adhoc||[]).length&&!Object.keys(d.evals||{}).length;
+  async function rpc(fn,body){const r=await fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',cache:'no-store',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const res=await r.json().catch(()=>null);if(!r.ok)throw new Error('خطأ من الخادم ('+r.status+')'+(res&&res.message?' '+res.message:''));return res}
+  /* true = صحيحة | false = خطأ | 'offline' = لا يوجد اتصال ولا بصمة محفوظة */
+  async function verify(p){try{const ok=await rpc('trs_check_pw',{pw:p});if(ok===true)try{localStorage.setItem(OFF_KEY,pwPrintSync(p))}catch(e){}return ok===true}
+    catch(err){let saved='';try{saved=localStorage.getItem(OFF_KEY)||''}catch(e){}return saved&&pwPrintSync(p)===saved?true:'offline'}}
+  function paint(){const pill=$('syncPill');if(pill){pill.className='linkpill sync-'+ST.k;pill.innerHTML=`<i></i>${esc(ST.t)}`;pill.title='اضغط للمزامنة الآن'}
+    const line=$('syncLine');if(line){line.className='alert '+(ST.k==='ok'?'ok':ST.k==='err'?'err':'info');line.style.marginBottom='0';line.textContent=ST.t+(device()?` — هذا الجهاز: ${device()}`:'')}}
+  function setStatus(k,t){ST={k,t};paint()}
+  function refreshUI(){if($('modal').classList.contains('show')||($('modal2')&&$('modal2').classList.contains('show'))){NEED_RENDER=true;toast('وصلت تحديثات من جهاز آخر — ستظهر بعد إغلاق النافذة')}else render()}
+  function lockOut(msg){pw='';try{sessionStorage.removeItem(SYNC_PW_KEY);localStorage.removeItem(OFF_KEY)}catch(e){}setStatus('err',msg||'كلمة السر اتغيّرت — ادخل بالكلمة الجديدة');showGate(msg||'كلمة السر اتغيّرت — ادخل بالكلمة الجديدة')}
+  async function sync(opts){opts=opts||{};
+    if(!pw){setStatus('off','المزامنة غير مفعّلة');return}
+    if(!navigator.onLine){setStatus('err','لا يوجد إنترنت — ستتم المزامنة عند عودة الاتصال');return}
+    if(busy){pending=true;return}
+    busy=true;setStatus('busy','جارٍ المزامنة…');
+    try{for(let attempt=1;attempt<=4;attempt++){
+        const base=loadBase();const res=await rpc('trs_get_state',{pw,known_version:base?base.version:-1});
+        if(!res||!res.ok){if(res&&res.error==='bad_pw'){lockOut();return}throw new Error((res&&res.error)||'رد غير متوقع من الخادم')}
+        const local=R;let merged,remoteHash;
+        if(res.unchanged){merged=local;remoteHash=base.dh}
+        else{const rd=res.data;const remote=rd&&typeof rd.recs==='object'&&rd.recs!==null?rd:null;
+          merged=remote?merge(local,remote,base):local;remoteHash=remote?dataHash(remote):null}
+        const mh=dataHash(merged);const changedLocal=mh!==dataHash(local);
+        if(changedLocal){R=merged;try{localStorage.setItem(RKEY,JSON.stringify(R))}catch(e){}refreshUI()}
+        let version=res.version;
+        if(remoteHash!==mh&&!(isEmpty(merged)&&remoteHash===null)){
+          const sv=await rpc('trs_save_state',{pw,new_data:merged,base_version:version,device:device()});
+          if(!sv||!sv.ok){if(sv&&sv.error==='bad_pw'){lockOut();return}if(sv&&sv.error==='conflict'&&attempt<4)continue;
+            throw new Error(sv&&sv.error==='conflict'?'أجهزة كثيرة تحفظ في نفس اللحظة — حاول مرة أخرى':'تعذّر الحفظ ('+((sv&&sv.error)||'?')+')')}
+          version=sv.version}
+        saveBase({version,h:hashMaps(toMaps(merged)),dh:mh,at:new Date().toISOString()});lastSyncAt=Date.now();
+        setStatus('ok',`متزامن ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`);
+        if(opts.manual)toast(changedLocal?'تمت المزامنة ووصلت تحديثات من أجهزة أخرى':'تمت المزامنة — البيانات متطابقة');
+        break}
+    }catch(err){console.warn('sync failed',err);let m=err.message||String(err);if(/failed to fetch|networkerror|load failed/i.test(m))m='تعذّر الوصول للخادم — تأكد من الإنترنت';
+      setStatus('err','فشلت المزامنة: '+m);if(opts.manual)toast('فشلت المزامنة: '+m,true)}
+    finally{busy=false;if(pending){pending=false;setTimeout(()=>sync(),500)}}}
+  function onLocalSave(){if(!pw)return;setStatus('wait','في انتظار الرفع…');clearTimeout(pushTimer);pushTimer=setTimeout(()=>sync(),PUSH_DELAY)}
+  function start(p){pw=p;try{sessionStorage.setItem(SYNC_PW_KEY,p)}catch(e){}sync();if(started)return;started=true;
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&pw&&Date.now()-lastSyncAt>30000)sync()});
+    window.addEventListener('online',()=>{if(pw)sync()});
+    setInterval(()=>{if(document.visibilityState==='visible'&&pw)sync()},POLL_EVERY)}
+  function logout(){if(!confirm('سيتم قفل النظام على هذا الجهاز، والدخول مرة أخرى يحتاج كلمة السر. البيانات على الخادم لن تُحذف.'))return;clearTimeout(pushTimer);try{sessionStorage.removeItem(SYNC_PW_KEY)}catch(e){}location.reload()}
+  return{start,sync,verify,onLocalSave,logout,paint,device,setDevice,_merge:merge,_dataHash:dataHash,status:()=>ST}
+})();
+window.SBSync=SBSync;
+
+/* ---- بوابة الدخول (كلمة السر يتحقق منها الخادم) ---- */
+function showGate(msg){closeModal();document.body.classList.add('locked');$('lkLogo').innerHTML=logoHTML();$('lkPw').value='';$('lkErr').textContent=msg||'';setTimeout(()=>$('lkPw').focus(),50)}
+let GATE_BUSY=false;
+async function tryUnlock(){const p=$('lkPw').value;const btn=$('lkBtn');if(!p||GATE_BUSY)return;GATE_BUSY=true;btn.disabled=true;btn.textContent='جارٍ التحقق…';$('lkErr').textContent='';
+  let res;try{res=await SBSync.verify(p)}finally{GATE_BUSY=false;btn.disabled=false;btn.textContent='دخول'}
+  if(res===true){$('lkPw').value='';document.body.classList.remove('locked');SBSync.start(p);render()}
+  else{$('lkErr').textContent=res==='offline'?'تعذّر الاتصال بالخادم — تأكد من الإنترنت وحاول مرة أخرى':'كلمة السر غير صحيحة';$('lkPw').value='';$('lkPw').focus()}}
+
 /* ===================== تشغيل ===================== */
 function applyTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem(THKEY,t)}catch(e){}}
 function toggleTheme(){applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')}
 applyTheme(lsGet(THKEY)||'dark');
 loadPlan();trackPlan();render();
-if(lsGet(PWKEY)&&(()=>{try{return sessionStorage.getItem(UNLK)!=='1'}catch(e){return true}})())lockNow();
+(()=>{let saved='';try{saved=sessionStorage.getItem(SYNC_PW_KEY)||''}catch(e){}if(saved)SBSync.start(saved);else showGate('')})();
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('modal2')&&$('modal2').classList.contains('show'))closeModal2();else closeModal()}});
 pullPlan(false);setInterval(()=>{if(!document.hidden)pullPlan(false)},300000);
