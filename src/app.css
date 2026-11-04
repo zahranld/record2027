@@ -178,3 +178,38 @@ body.locked .hdr,body.locked main,body.locked .ftr{display:none}
   body.print-modal main{display:none}
   .modal{border:0;box-shadow:none;width:100%}
 }
+/* واتساب */
+.att .ph{width:118px;font-family:Consolas,monospace}
+.wa{width:32px;height:32px;border-radius:50%;border:1px solid #25D366;background:transparent;color:#25D366;cursor:pointer;display:inline-grid;place-items:center;position:relative;padding:0}
+.wa svg{width:18px;height:18px;fill:currentColor}
+.wa:hover{background:#25D366;color:#fff}
+.wa.sent{background:#25D366;color:#fff}
+.wa.sent::after{content:'✓';position:absolute;top:-5px;inset-inline-end:-5px;width:15px;height:15px;border-radius:50%;background:var(--card);color:#1F8A4C;font-size:10px;line-height:15px;font-weight:800;border:1px solid #25D366}
+/* النماذج الرسمية TR-P للطباعة */
+#printArea{display:none}
+.pf{font-family:Arial,'Noto Kufi Arabic',sans-serif;color:#000;background:#fff;font-size:10.5pt;line-height:1.45}
+.pf table{border-collapse:collapse;width:100%}
+.pf th,.pf td{border:1px solid #000;padding:3px 5px;color:#000;background:#fff;position:static;font-size:inherit;white-space:normal;vertical-align:middle}
+.pf th{font-weight:700;background:#E9ECEC;text-align:center}
+.pf-hd{margin-bottom:8px}.pf-hd td{text-align:center}
+.pf-logo{width:22%}.pf-logo img{max-height:62px;max-width:100%}
+.pf-co{font-weight:800;font-size:13pt}.pf-title{font-weight:800;font-size:15pt;width:38%}
+.pf-k{font-weight:700;width:14%}.pf-v{width:14%;direction:ltr}
+.pf-info{margin:6px 0}.pf-info td{border:0;border-bottom:1px dotted #777;padding:4px 2px}
+.pf-l{margin:6px 0}.pf-s{margin:5px 0;font-size:9.5pt}.pf-note{color:#444;font-style:italic}
+.pf-t td{height:22px;text-align:center}.pf-t td.pf-nm{text-align:start;min-width:150px}
+.pf-ev td.pf-q{text-align:start;width:52%}.pf-ev small{color:#555;font-size:8pt}.pf-ev td{height:auto}.pf-bx{font-size:13pt;width:9.6%}
+.pf-sig{margin-top:14px}.pf-sig td{border:0;padding:6px 2px}
+.pf-ft{display:flex;justify-content:space-between;border:1px solid #000;padding:3px 10px;margin-top:10px;font-size:9pt;font-weight:700}
+@media print{
+  @page{size:A4;margin:10mm}
+  @page land{size:A4 landscape;margin:8mm}
+  body.print-form>*:not(#printArea){display:none!important}
+  body.print-form #printArea{display:block}
+  .pf-page{break-after:page}.pf-page:last-child{break-after:auto}
+  .pf-land{page:land}
+  .pf-f04{font-size:9.5pt}
+}
+.pf-f04 .pf-hd,.pf-land .pf-hd{margin-bottom:4px}.pf-f04 .pf-logo img,.pf-land .pf-logo img{max-height:48px}
+.pf-f04 th,.pf-f04 td{padding:1px 4px}.pf-f04 .pf-bx{font-size:11pt}.pf-f04 .pf-ev small{font-size:7.5pt}.pf-f04 .pf-s{margin:3px 0;font-size:9pt}.pf-f04 .pf-info td{padding:2px}
+.pf-land .pf-t td{height:19px;padding:1px 4px}.pf-land .pf-info td{padding:2px}.pf-land .pf-sig{margin-top:6px}.pf-land .pf-ft{margin-top:4px}
