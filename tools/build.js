@@ -11,7 +11,8 @@ let shell=fs.readFileSync(path.join(srcDir,'shell.html'),'utf8');
 const rep=(k,v)=>{shell=shell.split(k).join(v)};
 rep('/*FONT*/',fonts);
 rep('/*CSS*/',fs.readFileSync(path.join(srcDir,'app.css'),'utf8'));
-rep('/*SNAPSHOT*/','const PLAN_SNAPSHOT_AT='+JSON.stringify('نسخة '+at)+';\nconst PLAN_SNAPSHOT='+JSON.stringify(snap).replace(/<\/script/gi,'<\\/script')+';');
+// لا تُضمَّن بيانات الخطة في الملف العام — اللوجو فقط
+rep('/*SNAPSHOT*/','const PLAN_LOGO='+JSON.stringify(E.settings.logo||'')+';');
 rep('/*JS*/',fs.readFileSync(path.join(srcDir,'app.js'),'utf8'));
 fs.writeFileSync(out,shell);
 console.log('fonts',fonts.length,'needs',snap.needs.length,'programs',snap.programs.length,'size',shell.length);

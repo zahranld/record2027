@@ -50,13 +50,15 @@ let P={settings:{},needs:[],programs:[]},PLAN_SRC='snapshot',PLAN_AT='',PLAN_ST=
 function setPlan(d,src,at){if(!d||!Array.isArray(d.programs)||!Array.isArray(d.needs))return false;P={settings:d.settings||{},needs:d.needs,programs:d.programs};PLAN_SRC=src;PLAN_AT=at||'';return true}
 function loadPlan(){
   try{const c=JSON.parse(localStorage.getItem(PCACHE)||'null');if(c&&setPlan(c.data,c.src||'cache',c.at))return}catch(e){}
-  if(typeof PLAN_SNAPSHOT!=='undefined')setPlan(PLAN_SNAPSHOT,'snapshot',PLAN_SNAPSHOT_AT);
 }
 function cachePlan(src){try{localStorage.setItem(PCACHE,JSON.stringify({data:P,src,at:PLAN_AT}))}catch(e){}}
+/* بيانات الخطة تُقرأ عبر دالة محمية بكلمة سر هذا النظام (trs_get_plan) — لا قراءة عامة */
 async function pullPlan(manual){
+  let pw='';try{pw=sessionStorage.getItem('zahran_trs_sync_pw')||''}catch(e){}
+  if(!pw){if(manual)toast('ادخل بكلمة السر أولًا',true);return}
   PLAN_ST='جارٍ التحديث...';renderChrome();
-  try{const r=await fetch(PLAN_LINK.url+'/rest/v1/app_state?id=eq.1&select=data,version',{headers:{apikey:PLAN_LINK.key,Authorization:'Bearer '+PLAN_LINK.key}});
-    const rows=await r.json();if(!r.ok||!rows.length||!setPlan(rows[0].data,'live',new Date().toLocaleString('en-GB')))throw 0;
+  try{const r=await fetch(PLAN_LINK.url+'/rest/v1/rpc/trs_get_plan',{method:'POST',cache:'no-store',headers:{apikey:PLAN_LINK.key,Authorization:'Bearer '+PLAN_LINK.key,'Content-Type':'application/json'},body:JSON.stringify({pw})});
+    const res=await r.json().catch(()=>null);if(!r.ok||!res||!res.ok||!setPlan(res.data,'live',new Date().toLocaleString('en-GB')))throw 0;
     cachePlan('live');PLAN_ST='';trackPlan();if(manual)toast(`تم تحديث الخطة: ${P.programs.length} برنامج و ${P.needs.length} احتياج`);
     if(!$('modal').classList.contains('show'))render();else renderChrome();
   }catch(e){PLAN_ST='تعذر الاتصال';renderChrome();if(manual)toast('تعذر الاتصال بنظام الاحتياجات. يعمل النظام على آخر نسخة محفوظة.',true)}
@@ -158,7 +160,7 @@ const progStCls={'مكتمل':'done','جارٍ التنفيذ':'post','لم يب
 let VIEW='dash';
 const VIEWS=[{k:'dash',t:'لوحة القيادة'},{k:'exec',t:'التنفيذ والحضور',cnt:()=>M.slots.filter(s=>s.overdue).length,warn:true},{k:'progs',t:'البرامج'},{k:'people',t:'الموظفون'},
   {k:'eval',t:'التقييم'},{k:'budget',t:'الميزانية'},{k:'needs',t:'الاحتياجات'},{k:'changes',t:'تعديلات الخطة',cnt:()=>M.slots.filter(s=>s.unlinked).length},{k:'trainers',t:'المدربون'},{k:'reports',t:'التقارير'},{k:'set',t:'الإعدادات'}];
-function logoHTML(){return PS().logo?`<img src="${PS().logo}" alt="${esc(ORG())}">`:`<span class="logo-txt">زهـ<span>ـران</span></span>`}
+function logoHTML(){const lg=PS().logo||(typeof PLAN_LOGO!=='undefined'?PLAN_LOGO:'');return lg?`<img src="${lg}" alt="${esc(ORG())}">`:`<span class="logo-txt">زهـ<span>ـران</span></span>`}
 function renderChrome(){
   $('nav').innerHTML=VIEWS.map(v=>{const c=v.cnt?v.cnt():0;return `<button class="${VIEW===v.k?'on':''}" onclick="go('${v.k}')">${v.t}${c?`<span class="cnt" title="${v.k==='exec'?'جلسات متأخرة':'تسجيلات تحتاج إعادة ربط'}">${c}</span>`:''}</button>`}).join('');
   $('logoBox').innerHTML=logoHTML()+`<span><small>نظام إدارة وتسجيل التدريب ${YEAR()}</small></span>`;
@@ -607,7 +609,7 @@ function vSet(){const st=R.settings;
   return pageTop('الإعدادات','الربط بنظام الاحتياجات، معايير التقييم، بيانات الموظفين، النسخ الاحتياطي والأمان.')+
   sec('الربط بنظام الاحتياجات والخطة السنوية')+`<div class="card"><div class="info-row" style="margin:0 0 12px"><span><b>المصدر الحالي:</b>${PLAN_SRC==='live'?'مباشر من نظام الاحتياجات':PLAN_SRC==='import'?'ملف مستورد':PLAN_SRC==='cache'?'آخر نسخة محفوظة':'نسخة مدمجة داخل الملف'}</span><span><b>آخر تحديث:</b>${esc(PLAN_AT||'—')}</span><span><b>البرامج:</b>${P.programs.length}</span><span><b>الاحتياجات:</b>${P.needs.length}</span><span><b>الجلسات المخططة:</b>${M.slots.filter(s=>!s.prog.adhoc).length}</span></div>
    <p class="sub" style="margin-top:0">يقرأ النظام البرامج والجلسات والاحتياجات مباشرة من <a href="${PLAN_LINK.page}" target="_blank" rel="noopener">نظام الاحتياجات التدريبية</a> (قراءة فقط) عند كل فتح وكل 5 دقائق. أي تعديل على الخطة هناك يظهر هنا تلقائيًا، وتبقى بيانات التنفيذ محفوظة ومربوطة بكود البرنامج ورقم المجموعة.</p>
-   <div class="acts"><button class="btn" onclick="pullPlan(true)">تحديث من نظام الاحتياجات الآن</button><button class="btn-out" onclick="$('fileP').click()">استيراد نسخة JSON من نظام الاحتياجات</button><button class="btn-out" onclick="resetPlan()">الرجوع للنسخة المدمجة</button></div></div>`+
+   <div class="acts"><button class="btn" onclick="pullPlan(true)">تحديث من نظام الاحتياجات الآن</button><button class="btn-out" onclick="$('fileP').click()">استيراد نسخة JSON من نظام الاحتياجات</button></div></div>`+
   sec('بيانات المراسلات والنماذج الرسمية','تظهر في رسائل واتساب وفي النماذج المطبوعة (TR-P-F03 / F04 / F09).')+`<div class="card"><div class="fgrid"><div class="f"><label>اسم منسق التدريب</label><input id="s_cn" value="${esc(st.coordName||'')}"></div><div class="f"><label>رقم منسق التدريب</label><input id="s_cp" dir="ltr" value="${esc(st.coordPhone||'')}"></div><div class="f"><label>مدير الموارد البشرية (توقيع الإخطار)</label><input id="s_hr" value="${esc(st.hrManager||'')}"></div><div class="f"><label>رقم إصدار النماذج</label><input id="s_fr" value="${esc(st.formRev||'2')}"></div><div class="f"><label>تاريخ إصدار النماذج</label><input id="s_fd" value="${esc(st.formDate||'')}"></div></div><div class="acts" style="margin-top:10px"><button class="btn" onclick="saveSet()">حفظ</button></div></div>`+
   sec('معايير التنفيذ والتقييم')+`<div class="card"><div class="fgrid"><div class="f"><label>درجة النجاح في الاختبار البعدي %</label><input id="s_pass" type="number" value="${esc(st.passMark)}"></div><div class="f"><label>موعد متابعة L3 بعد التدريب (يوم)</label><input id="s_l3" type="number" value="${esc(st.l3Days)}"></div><div class="f"><label>المستهدف السنوي لساعات تدريب الموظف</label><input id="s_ht" type="number" value="${esc(st.hoursTarget)}"></div><div class="f wall"><label>أماكن التنفيذ (سطر لكل مكان)</label><textarea id="s_ven">${esc((st.venues||[]).join('\n'))}</textarea></div></div><div class="acts" style="margin-top:10px"><button class="btn" onclick="saveSet()">حفظ</button></div></div>`+
   `<div id="empSec">${sec('بيانات الموظفين (Master Data)',`${R.employees.length} موظف — تُستخدم لاستكمال الأسماء تلقائيًا من الكود ولمعرفة من لم يحصل على تدريب. الأعمدة: الكود، الاسم، الإدارة، الفرع، الوظيفة.`)}</div><div class="card"><div class="acts"><button class="btn-out" onclick="$('fileE').click()">استيراد من Excel</button><button class="btn-out" onclick="pasteEmp()">لصق من Excel</button><button class="btn-out" onclick="exportEmp()">تصدير القائمة</button><button class="btn-out" style="color:var(--danger)" onclick="if(confirm('حذف قائمة الموظفين؟ (لا يؤثر على كشوف الحضور)')){R.employees=[];save();render()}">حذف القائمة</button></div></div>`+
@@ -732,7 +734,7 @@ function showGate(msg){closeModal();document.body.classList.add('locked');$('lkL
 let GATE_BUSY=false;
 async function tryUnlock(){const p=$('lkPw').value;const btn=$('lkBtn');if(!p||GATE_BUSY)return;GATE_BUSY=true;btn.disabled=true;btn.textContent='جارٍ التحقق…';$('lkErr').textContent='';
   let res;try{res=await SBSync.verify(p)}finally{GATE_BUSY=false;btn.disabled=false;btn.textContent='دخول'}
-  if(res===true){$('lkPw').value='';document.body.classList.remove('locked');SBSync.start(p);render()}
+  if(res===true){$('lkPw').value='';document.body.classList.remove('locked');SBSync.start(p);render();pullPlan(false)}
   else{$('lkErr').textContent=res==='offline'?'تعذّر الاتصال بالخادم — تأكد من الإنترنت وحاول مرة أخرى':'كلمة السر غير صحيحة';$('lkPw').value='';$('lkPw').focus()}}
 
 /* ===================== تشغيل ===================== */
